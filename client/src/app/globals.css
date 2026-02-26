@@ -1,0 +1,287 @@
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --text: #181b20;
+  --muted: #616a75;
+  --border: #e4e7ec;
+  --shadow: 0 10px 30px rgba(15, 22, 31, 0.08);
+  --radius-lg: 18px;
+  --radius-md: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: radial-gradient(circle at 20% 0%, #fef2ea, transparent 30%),
+    radial-gradient(circle at 100% 100%, #eaf4ff, transparent 30%),
+    var(--bg);
+  color: var(--text);
+  font-family: 'Avenir Next', 'Segoe UI', sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+.shell {
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.centered {
+  display: grid;
+  place-items: center;
+}
+
+.panel {
+  width: min(900px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.hero {
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.hero h1 {
+  font-size: clamp(2.3rem, 6vw, 3.5rem);
+  margin-bottom: 10px;
+}
+
+.hero p {
+  color: var(--muted);
+  font-size: 1.15rem;
+  margin-bottom: 28px;
+}
+
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.actions {
+  width: min(300px, 100%);
+  margin: 0 auto;
+}
+
+.button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: white;
+  padding: 12px 18px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(12, 24, 36, 0.08);
+}
+
+.button.primary {
+  background: #181b20;
+  border-color: #181b20;
+  color: #fff;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  font-size: 1rem;
+  outline: none;
+}
+
+.textarea {
+  min-height: 150px;
+  resize: vertical;
+}
+
+.input:focus,
+.textarea:focus {
+  border-color: #95a3b8;
+}
+
+.page-title {
+  font-size: clamp(2rem, 4.2vw, 2.8rem);
+  margin-bottom: 16px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.logo-small {
+  width: 98px;
+  height: auto;
+  display: block;
+}
+
+.logo-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.created-by {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.board {
+  display: grid;
+  gap: 18px;
+}
+
+.board-top {
+  padding: 20px;
+  display: grid;
+  gap: 12px;
+}
+
+.board-top h1 {
+  font-size: clamp(1.7rem, 4vw, 2.5rem);
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.badge {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  background: #fff;
+}
+
+.columns {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.column {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: #fff;
+  padding: 10px;
+  min-height: 240px;
+}
+
+.column-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 4px 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.column-title h3 {
+  font-size: 1rem;
+}
+
+.column-title span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.column-cards {
+  display: grid;
+  gap: 10px;
+}
+
+.response-card {
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 11px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  animation: slideIn 220ms ease both;
+}
+
+.response-card header {
+  color: rgba(0, 0, 0, 0.55);
+  font-size: 0.75rem;
+  margin-bottom: 6px;
+}
+
+.response-card p {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.response-card.highlighted {
+  box-shadow: 0 0 0 2px rgba(59, 127, 246, 0.5), 0 8px 20px rgba(59, 127, 246, 0.2);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.error {
+  color: #a22222;
+  font-size: 0.94rem;
+}
+
+.success {
+  color: #237f37;
+  font-size: 0.94rem;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 1000px) {
+  .columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .shell {
+    padding: 14px;
+  }
+
+  .columns {
+    grid-template-columns: 1fr;
+  }
+
+  .button {
+    width: 100%;
+  }
+}
