@@ -43,7 +43,9 @@ export default function ResponseCard({
       }}
     >
       <header>
-        <span>{anonymousMode ? 'Anonymous response' : `Response #${card.id}`}</span>
+        <span>
+          {anonymousMode ? 'Anonymous response' : card.studentName?.trim() || `Response #${card.id}`}
+        </span>
       </header>
       <p>{card.content}</p>
     </article>

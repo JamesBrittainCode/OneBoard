@@ -4,9 +4,12 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { validateSession } from '@/lib/api';
 import { CREATED_BY } from '@/lib/branding';
+import { setStudentName } from '@/lib/storage';
 
 export default function StudentJoinPage() {
   const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [needsName, setNeedsName] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -21,9 +24,24 @@ export default function StudentJoinPage() {
       return;
     }
 
+    if (needsName && !name.trim()) {
+      setError('Please enter your name.');
+      return;
+    }
+
     setLoading(true);
     try {
-      await validateSession(joinCode);
+      const data = await validateSession(joinCode);
+      setNeedsName(!data.session.anonymousMode);
+      if (!data.session.anonymousMode && !name.trim()) {
+        setError('This teacher requires names.');
+        return;
+      }
+
+      if (!data.session.anonymousMode) {
+        setStudentName(joinCode, name.trim());
+      }
+
       router.push(`/student/respond/${joinCode}`);
     } catch (_error) {
       setError('Invalid or ended session code.');
@@ -50,6 +68,17 @@ export default function StudentJoinPage() {
               maxLength={6}
               required
             />
+            {needsName ? (
+              <input
+                className="input"
+                aria-label="Enter your name"
+                placeholder="Your Name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={80}
+                required
+              />
+            ) : null}
             <button className="button primary" type="submit" disabled={loading}>
               {loading ? 'Joining...' : 'Join'}
             </button>

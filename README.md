@@ -29,6 +29,7 @@ Example file: `client/.env.local.example`
 1. Create a Supabase project.
 2. In Supabase dashboard, open SQL Editor.
 3. Run `supabase/schema.sql` from this repo.
+   - Re-run this file when pulling new updates so schema migrations (new columns/policies) apply.
 4. In Auth settings:
    - Enable Email/Password provider.
    - For easiest testing, disable email confirmation (optional).

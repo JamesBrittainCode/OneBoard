@@ -245,6 +245,12 @@ p {
   gap: 10px;
 }
 
+.section-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .error {
   color: #a22222;
   font-size: 0.94rem;
@@ -269,6 +275,10 @@ p {
 @media (max-width: 1000px) {
   .columns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .section-edit-grid {
+    grid-template-columns: 1fr;
   }
 }
 

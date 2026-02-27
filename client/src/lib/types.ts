@@ -1,4 +1,5 @@
 export type Category = 'Strong Thinking' | 'Needs Clarification' | 'Misconception' | null;
+export type BoardMode = 'categorized' | 'open';
 
 export interface Session {
   id: number;
@@ -6,6 +7,9 @@ export interface Session {
   joinCode: string;
   createdAt: string;
   active: boolean;
+  boardMode: BoardMode;
+  anonymousMode: boolean;
+  sectionLabels: [string, string, string];
 }
 
 export interface ResponseCard {
@@ -14,4 +18,5 @@ export interface ResponseCard {
   content: string;
   createdAt: string;
   category: Category;
+  studentName: string | null;
 }

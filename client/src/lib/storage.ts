@@ -21,6 +21,16 @@ export function setSubmissionStatus(joinCode: string, submitted: boolean) {
   window.localStorage.setItem(`oneboard:submitted:${joinCode}`, submitted ? '1' : '0');
 }
 
+export function getStudentName(joinCode: string) {
+  if (typeof window === 'undefined') return '';
+  return window.localStorage.getItem(`oneboard:student-name:${joinCode}`) || '';
+}
+
+export function setStudentName(joinCode: string, name: string) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(`oneboard:student-name:${joinCode}`, name.trim());
+}
+
 export function recordTeacherSession(joinCode: string, prompt: string) {
   if (typeof window === 'undefined') return;
   const existing = JSON.parse(window.localStorage.getItem(SESSION_KEY) || '[]') as Array<{

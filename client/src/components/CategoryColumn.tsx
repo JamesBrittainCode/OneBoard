@@ -11,7 +11,8 @@ export default function CategoryColumn({
   highlighted,
   onToggleHighlight,
   onDropCard,
-  onDragStart
+  onDragStart,
+  dragEnabled = true
 }: {
   title: string;
   category: Category;
@@ -21,12 +22,17 @@ export default function CategoryColumn({
   onToggleHighlight: (id: number) => void;
   onDropCard: (category: Category) => void;
   onDragStart: (id: number) => void;
+  dragEnabled?: boolean;
 }) {
   return (
     <section
       className="column"
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={() => onDropCard(category)}
+      onDragOver={(event) => {
+        if (dragEnabled) event.preventDefault();
+      }}
+      onDrop={() => {
+        if (dragEnabled) onDropCard(category);
+      }}
     >
       <div className="column-title">
         <h3>{title}</h3>
@@ -40,7 +46,7 @@ export default function CategoryColumn({
             anonymousMode={anonymousMode}
             highlighted={highlighted.has(card.id)}
             onToggleHighlight={() => onToggleHighlight(card.id)}
-            draggable
+            draggable={dragEnabled}
             onDragStart={onDragStart}
           />
         ))}

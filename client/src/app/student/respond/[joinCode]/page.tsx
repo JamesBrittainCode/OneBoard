@@ -4,13 +4,14 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { getSession, submitResponse } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
-import { getStudentId, getSubmissionStatus, setSubmissionStatus } from '@/lib/storage';
+import { getStudentId, getStudentName, getSubmissionStatus, setSubmissionStatus } from '@/lib/storage';
 
 export default function StudentRespondPage() {
   const params = useParams<{ joinCode: string }>();
   const joinCode = params.joinCode.toUpperCase();
 
   const [prompt, setPrompt] = useState('');
+  const [anonymousMode, setAnonymousMode] = useState(true);
   const [content, setContent] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -27,6 +28,7 @@ export default function StudentRespondPage() {
       .then((data) => {
         if (!mounted) return;
         setPrompt(data.session.prompt);
+        setAnonymousMode(data.session.anonymousMode);
         setEnded(!data.session.active);
       })
       .catch((_error) => {
@@ -83,11 +85,15 @@ export default function StudentRespondPage() {
       setError('Please type your response.');
       return;
     }
+    if (!anonymousMode && !getStudentName(joinCode)) {
+      setError('Please go back and re-join with your name.');
+      return;
+    }
 
     setSending(true);
     setError('');
     try {
-      await submitResponse(joinCode, getStudentId(joinCode), text);
+      await submitResponse(joinCode, getStudentId(joinCode), text, getStudentName(joinCode));
       setSubmitted(true);
       setSubmissionStatus(joinCode, true);
     } catch (err) {

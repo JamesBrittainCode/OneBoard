@@ -7,13 +7,31 @@ create table if not exists public.sessions (
   join_code text not null unique,
   teacher_user_id uuid not null references auth.users(id) on delete cascade,
   created_at timestamptz not null default now(),
-  active boolean not null default true
+  active boolean not null default true,
+  board_mode text not null default 'categorized',
+  anonymous_mode boolean not null default true,
+  section_label_1 text not null default 'Strong Thinking',
+  section_label_2 text not null default 'Needs Clarification',
+  section_label_3 text not null default 'Misconception'
 );
+
+alter table public.sessions
+  add column if not exists board_mode text not null default 'categorized',
+  add column if not exists anonymous_mode boolean not null default true,
+  add column if not exists section_label_1 text not null default 'Strong Thinking',
+  add column if not exists section_label_2 text not null default 'Needs Clarification',
+  add column if not exists section_label_3 text not null default 'Misconception';
+
+alter table public.sessions
+  drop constraint if exists sessions_board_mode_check;
+alter table public.sessions
+  add constraint sessions_board_mode_check check (board_mode in ('categorized', 'open'));
 
 create table if not exists public.responses (
   id bigint generated always as identity primary key,
   session_id bigint not null references public.sessions(id) on delete cascade,
   student_id text not null,
+  student_name text,
   content text not null,
   created_at timestamptz not null default now(),
   category text,
@@ -22,16 +40,22 @@ create table if not exists public.responses (
   constraint responses_one_per_student unique (session_id, student_id)
 );
 
+alter table public.responses
+  add column if not exists student_name text;
+
 alter table public.sessions enable row level security;
 alter table public.responses enable row level security;
 
 -- Sessions: students can read active sessions by join code.
+drop policy if exists "sessions_select_active" on public.sessions;
 create policy "sessions_select_active"
   on public.sessions
   for select
+  to anon, authenticated
   using (active = true or auth.uid() = teacher_user_id);
 
 -- Sessions: only authenticated teacher can create own sessions.
+drop policy if exists "sessions_insert_owner" on public.sessions;
 create policy "sessions_insert_owner"
   on public.sessions
   for insert
@@ -39,6 +63,7 @@ create policy "sessions_insert_owner"
   with check (auth.uid() = teacher_user_id);
 
 -- Sessions: only owner can update session.
+drop policy if exists "sessions_update_owner" on public.sessions;
 create policy "sessions_update_owner"
   on public.sessions
   for update
@@ -47,6 +72,7 @@ create policy "sessions_update_owner"
   with check (auth.uid() = teacher_user_id);
 
 -- Responses: teachers can read responses for their own sessions.
+drop policy if exists "responses_select_owner" on public.responses;
 create policy "responses_select_owner"
   on public.responses
   for select
@@ -61,6 +87,7 @@ create policy "responses_select_owner"
   );
 
 -- Responses: any user (including anon) can submit once to an active session.
+drop policy if exists "responses_insert_active_session" on public.responses;
 create policy "responses_insert_active_session"
   on public.responses
   for insert
@@ -75,6 +102,7 @@ create policy "responses_insert_active_session"
   );
 
 -- Responses: only owner teacher can categorize responses.
+drop policy if exists "responses_update_owner" on public.responses;
 create policy "responses_update_owner"
   on public.responses
   for update
