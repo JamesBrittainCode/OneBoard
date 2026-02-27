@@ -217,25 +217,23 @@ export async function submitResponse(joinCode: string, studentId: string, conten
 
   if (sessionError || !sessionRow) throw new Error('Session has ended.');
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('responses')
     .insert({
       session_id: sessionRow.id,
       student_id: safeStudentId,
       content: safeContent,
       category: null
-    })
-    .select('id,session_id,content,created_at,category')
-    .single();
+    });
 
   if (error?.code === '23505') {
     throw new Error('Response already submitted.');
   }
-  if (error || !data) {
+  if (error) {
     throw new Error(error?.message || 'Could not submit response.');
   }
 
-  return { response: toResponse(data) };
+  return { ok: true };
 }
 
 export async function updateResponseCategory(
