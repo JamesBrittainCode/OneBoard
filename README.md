@@ -9,10 +9,10 @@ OneBoard is a real-time classroom thinking wall with separate Teacher and Studen
 - Database: SQLite (`better-sqlite3`)
 - Auth: Teacher email/password login
 
-## Files Added For Deployment
+## Deployment Files
 
-- `railway.json` (backend deploy/start/healthcheck config)
-- `server/.env.example` (includes production env variables)
+- `render.yaml` (Render backend service + persistent disk)
+- `server/.env.example` (server env template)
 
 ## Local Run
 
@@ -36,70 +36,65 @@ npm run dev
 - Frontend: `http://localhost:3000`
 - Backend: `http://localhost:4000`
 
-## Deploy To Railway + Vercel (Step By Step)
+## Deploy To Render + Vercel (Step By Step)
 
-### A. Push your code to GitHub
+### 1. Push code to GitHub
 
-1. Create a GitHub repo.
-2. Push this project to that repo.
+- Push your latest `main` branch to `JamesBrittainCode/OneBoard`.
 
-### B. Deploy backend on Railway
+### 2. Deploy backend on Render
 
-1. Go to Railway and create a new project.
-2. Choose **Deploy from GitHub repo** and select this repo.
-3. In Railway service settings, set the **Root Directory** to repo root (where `railway.json` is).
-4. Add environment variables:
+1. Go to [Render](https://render.com) -> `New` -> `Blueprint`.
+2. Select your GitHub repo (`JamesBrittainCode/OneBoard`).
+3. Render detects `render.yaml` and creates service `oneboard-api`.
+4. In service `Environment`, set:
    - `CLIENT_ORIGIN=https://YOUR_VERCEL_DOMAIN`
    - `AUTH_SECRET=LONG_RANDOM_SECRET_STRING`
-   - `ALLOW_VERCEL_PREVIEW=true` (optional but recommended)
-5. Add a persistent volume for SQLite:
-   - Create volume and mount to `/app/server/data`
-   - This keeps `oneboard.db` across restarts/deploys.
-6. Deploy. Confirm health check passes at `/health`.
-7. Copy your Railway backend URL, for example:
-   - `https://oneboard-api-production.up.railway.app`
+   - `ALLOW_VERCEL_PREVIEW=true`
+5. Confirm persistent disk is attached:
+   - Mount path should be `/opt/render/project/src/data`
+6. Deploy and copy backend URL, e.g.:
+   - `https://oneboard-api.onrender.com`
+7. Verify health endpoint:
+   - `https://oneboard-api.onrender.com/health`
 
-### C. Deploy frontend on Vercel
+### 3. Deploy frontend on Vercel
 
-1. Go to Vercel and import the same GitHub repo.
-2. In project settings:
-   - Set **Root Directory** to `client`
-3. Add environment variables:
-   - `NEXT_PUBLIC_API_URL=https://YOUR_RAILWAY_BACKEND_URL`
-   - `NEXT_PUBLIC_SOCKET_URL=https://YOUR_RAILWAY_BACKEND_URL`
-4. Deploy.
-5. Copy your Vercel domain, for example:
+1. Go to [Vercel](https://vercel.com) -> `Add New` -> `Project`.
+2. Import `JamesBrittainCode/OneBoard`.
+3. Set **Root Directory** to `client`.
+4. Add env variables:
+   - `NEXT_PUBLIC_API_URL=https://YOUR_RENDER_BACKEND_URL`
+   - `NEXT_PUBLIC_SOCKET_URL=https://YOUR_RENDER_BACKEND_URL`
+5. Deploy and copy Vercel URL, e.g.:
    - `https://oneboard.vercel.app`
 
-### D. Wire CORS correctly (important)
+### 4. Final CORS wiring
 
-1. Go back to Railway env vars.
-2. Set `CLIENT_ORIGIN` to your Vercel URL (or multiple, comma-separated), e.g.:
+- Go back to Render env vars and update `CLIENT_ORIGIN` to your real Vercel domains.
+- You can comma-separate multiple domains, example:
 
 ```text
-https://oneboard.vercel.app,https://oneboard-git-main-yourname.vercel.app
+https://oneboard.vercel.app,https://oneboard-git-main-jamesbrittaincode.vercel.app
 ```
 
-3. Redeploy Railway.
+- Redeploy Render service.
 
-### E. Verify production
+### 5. Verify production
 
-1. Open Vercel app URL.
-2. Go to Teacher page.
-3. Create a teacher account and sign in.
-4. Start a session.
-5. Open Student page in another browser/device.
-6. Join with code and submit response.
-7. Confirm live updates appear on teacher board.
+1. Open Vercel URL.
+2. Teacher page -> create account/login.
+3. Launch a session.
+4. Student page -> join with code -> submit response.
+5. Confirm live updates on teacher board.
 
 ## Required Environment Variables
 
-### Railway (server)
+### Render (server)
 
 - `CLIENT_ORIGIN`
 - `AUTH_SECRET`
-- `ALLOW_VERCEL_PREVIEW` (`true` or `false`)
-- `PORT` is provided by Railway automatically.
+- `ALLOW_VERCEL_PREVIEW`
 
 ### Vercel (client)
 
@@ -108,7 +103,7 @@ https://oneboard.vercel.app,https://oneboard-git-main-yourname.vercel.app
 
 ## Notes
 
-- Teacher operations are protected by account auth and session ownership checks.
-- Students still join only with join code (as intended).
-- SQLite is acceptable if mounted on a persistent Railway volume.
-- If usage grows, migrate DB to Postgres.
+- Teacher actions are protected by account auth + session ownership checks.
+- Students join by code only (as designed).
+- SQLite data persists because of the Render disk mount.
+- If usage grows, migrate from SQLite to Postgres.
