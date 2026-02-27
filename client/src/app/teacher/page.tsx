@@ -3,15 +3,9 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { createSession, getMe, loginTeacher, registerTeacher } from '@/lib/api';
+import { createSession, getMe, loginTeacher, logoutTeacher, registerTeacher } from '@/lib/api';
 import { CREATED_BY } from '@/lib/branding';
-import {
-  clearAuthToken,
-  getAuthToken,
-  getTeacherSessions,
-  recordTeacherSession,
-  setAuthToken
-} from '@/lib/storage';
+import { getTeacherSessions, recordTeacherSession } from '@/lib/storage';
 
 export default function TeacherPage() {
   const [creating, setCreating] = useState(false);
@@ -29,18 +23,12 @@ export default function TeacherPage() {
   const previous = useMemo(() => getTeacherSessions(), []);
 
   useEffect(() => {
-    const token = getAuthToken();
-    if (!token) {
-      setAuthLoading(false);
-      return;
-    }
-
-    getMe(token)
+    getMe()
       .then(({ user }) => {
         setUserEmail(user.email);
       })
       .catch(() => {
-        clearAuthToken();
+        setUserEmail('');
       })
       .finally(() => {
         setAuthLoading(false);
@@ -60,7 +48,6 @@ export default function TeacherPage() {
     try {
       const action = authMode === 'register' ? registerTeacher : loginTeacher;
       const result = await action(email.trim(), password);
-      setAuthToken(result.token);
       setUserEmail(result.user.email);
       setPassword('');
     } catch (err) {
@@ -78,15 +65,9 @@ export default function TeacherPage() {
       return;
     }
 
-    const authToken = getAuthToken();
-    if (!authToken) {
-      setError('Please sign in first.');
-      return;
-    }
-
     setLoading(true);
     try {
-      const { session } = await createSession(prompt.trim(), authToken);
+      const { session } = await createSession(prompt.trim());
       recordTeacherSession(session.joinCode, session.prompt);
       router.push(`/teacher/live/${session.joinCode}`);
     } catch (err) {
@@ -96,10 +77,15 @@ export default function TeacherPage() {
     }
   }
 
-  function signOut() {
-    clearAuthToken();
-    setUserEmail('');
-    setCreating(false);
+  async function signOut() {
+    setError('');
+    try {
+      await logoutTeacher();
+      setUserEmail('');
+      setCreating(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not sign out.');
+    }
   }
 
   if (authLoading) {

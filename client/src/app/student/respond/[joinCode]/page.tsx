@@ -2,8 +2,8 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { createSocket } from '@/lib/socket';
 import { getSession, submitResponse } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 import { getStudentId, getSubmissionStatus, setSubmissionStatus } from '@/lib/storage';
 
 export default function StudentRespondPage() {
@@ -27,6 +27,7 @@ export default function StudentRespondPage() {
       .then((data) => {
         if (!mounted) return;
         setPrompt(data.session.prompt);
+        setEnded(!data.session.active);
       })
       .catch((_error) => {
         if (!mounted) return;
@@ -36,16 +37,40 @@ export default function StudentRespondPage() {
         if (mounted) setLoading(false);
       });
 
-    const socket = createSocket();
-    socket.emit('session:join', { joinCode, role: 'student' });
-    socket.on('session:ended', () => {
-      setEnded(true);
-      setError('Session has ended.');
+    const sessionChannel = supabase
+      .channel(`sessions:${joinCode}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'sessions',
+          filter: `join_code=eq.${joinCode}`
+        },
+        (payload) => {
+          const row = payload.new as { active: boolean };
+          if (!row.active) {
+            setEnded(true);
+            setError('Session has ended.');
+          }
+        }
+      )
+      .subscribe();
+
+    const presenceChannel = supabase.channel(`presence:${joinCode}`, {
+      config: { presence: { key: getStudentId(joinCode) } }
+    });
+
+    presenceChannel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await presenceChannel.track({ online_at: new Date().toISOString() });
+      }
     });
 
     return () => {
       mounted = false;
-      socket.disconnect();
+      supabase.removeChannel(sessionChannel);
+      supabase.removeChannel(presenceChannel);
     };
   }, [joinCode]);
 

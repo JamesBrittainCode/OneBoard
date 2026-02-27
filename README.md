@@ -2,17 +2,38 @@
 
 OneBoard is a real-time classroom thinking wall with separate Teacher and Student interfaces.
 
-## Stack
+## Stack (Current)
 
 - Frontend: Next.js (React, TypeScript)
-- Backend: Node.js + Express + Socket.io
-- Database: SQLite (`better-sqlite3`)
-- Auth: Teacher email/password login
+- Backend services: Supabase (Auth + Postgres + Realtime)
+- Hosting: Vercel (frontend)
 
-## Deployment Files
+## Quick Architecture
 
-- `render.yaml` (Render backend service + persistent disk)
-- `server/.env.example` (server env template)
+- Teacher auth uses Supabase Auth email/password.
+- Session + response data is stored in Supabase Postgres.
+- Realtime updates use Supabase Realtime channels:
+  - Response insert/update events
+  - Session ended updates
+  - Presence-based student count
+
+## Required Env Vars (Vercel + local)
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+Example file: `client/.env.local.example`
+
+## One-Time Supabase Setup
+
+1. Create a Supabase project.
+2. In Supabase dashboard, open SQL Editor.
+3. Run `supabase/schema.sql` from this repo.
+4. In Auth settings:
+   - Enable Email/Password provider.
+   - For easiest testing, disable email confirmation (optional).
+5. In Database Replication / Realtime settings:
+   - Ensure `sessions` and `responses` are included for realtime updates.
 
 ## Local Run
 
@@ -22,88 +43,41 @@ OneBoard is a real-time classroom thinking wall with separate Teacher and Studen
 npm install
 ```
 
-2. Create env files:
+2. Set env vars:
 
-- Copy `server/.env.example` to `server/.env`
-- Copy `client/.env.local.example` to `client/.env.local`
+- Copy `client/.env.local.example` -> `client/.env.local`
+- Fill in your Supabase URL + anon key.
 
-3. Start both apps:
+3. Start app:
 
 ```bash
-npm run dev
+npm run dev:client
 ```
 
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:4000`
+Open `http://localhost:3000`.
 
-## Deploy To Render + Vercel (Step By Step)
+## Deploy on Vercel (No Render/Railway Needed)
 
-### 1. Push code to GitHub
+1. Import repo into Vercel.
+2. Set **Root Directory** to `client`.
+3. Add Vercel environment variables:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+4. Deploy.
 
-- Push your latest `main` branch to `JamesBrittainCode/OneBoard`.
-
-### 2. Deploy backend on Render
-
-1. Go to [Render](https://render.com) -> `New` -> `Blueprint`.
-2. Select your GitHub repo (`JamesBrittainCode/OneBoard`).
-3. Render detects `render.yaml` and creates service `oneboard-api`.
-4. In service `Environment`, set:
-   - `CLIENT_ORIGIN=https://YOUR_VERCEL_DOMAIN`
-   - `AUTH_SECRET=LONG_RANDOM_SECRET_STRING`
-   - `ALLOW_VERCEL_PREVIEW=true`
-5. Confirm persistent disk is attached:
-   - Mount path should be `/opt/render/project/src/data`
-6. Deploy and copy backend URL, e.g.:
-   - `https://oneboard-api.onrender.com`
-7. Verify health endpoint:
-   - `https://oneboard-api.onrender.com/health`
-
-### 3. Deploy frontend on Vercel
-
-1. Go to [Vercel](https://vercel.com) -> `Add New` -> `Project`.
-2. Import `JamesBrittainCode/OneBoard`.
-3. Set **Root Directory** to `client`.
-4. Add env variables:
-   - `NEXT_PUBLIC_API_URL=https://YOUR_RENDER_BACKEND_URL`
-   - `NEXT_PUBLIC_SOCKET_URL=https://YOUR_RENDER_BACKEND_URL`
-5. Deploy and copy Vercel URL, e.g.:
-   - `https://oneboard.vercel.app`
-
-### 4. Final CORS wiring
-
-- Go back to Render env vars and update `CLIENT_ORIGIN` to your real Vercel domains.
-- You can comma-separate multiple domains, example:
-
-```text
-https://oneboard.vercel.app,https://oneboard-git-main-jamesbrittaincode.vercel.app
-```
-
-- Redeploy Render service.
-
-### 5. Verify production
+## Verify Deployment
 
 1. Open Vercel URL.
-2. Teacher page -> create account/login.
-3. Launch a session.
-4. Student page -> join with code -> submit response.
-5. Confirm live updates on teacher board.
-
-## Required Environment Variables
-
-### Render (server)
-
-- `CLIENT_ORIGIN`
-- `AUTH_SECRET`
-- `ALLOW_VERCEL_PREVIEW`
-
-### Vercel (client)
-
-- `NEXT_PUBLIC_API_URL`
-- `NEXT_PUBLIC_SOCKET_URL`
+2. Go to Teacher page.
+3. Create account/login.
+4. Start session.
+5. Open Student page in another browser/device.
+6. Join with code and submit response.
+7. Confirm teacher board updates instantly.
+8. End session and confirm student sees "Session has ended."
 
 ## Notes
 
-- Teacher actions are protected by account auth + session ownership checks.
-- Students join by code only (as designed).
-- SQLite data persists because of the Render disk mount.
-- If usage grows, migrate from SQLite to Postgres.
+- Students can submit once per session (DB unique constraint).
+- Teacher-only updates are enforced by Supabase RLS policies.
+- CSV export is generated client-side on teacher board.

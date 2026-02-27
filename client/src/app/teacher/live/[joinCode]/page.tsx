@@ -3,10 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import CategoryColumn from '@/components/CategoryColumn';
-import { createSocket } from '@/lib/socket';
-import { endSession, exportLink, getTeacherSession, updateResponseCategory } from '@/lib/api';
+import { endSession, exportBoardCsv, getTeacherSession, updateResponseCategory } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 import type { Category, ResponseCard } from '@/lib/types';
-import { getAuthToken } from '@/lib/storage';
 
 const CATEGORIES: Array<{ title: string; category: Category }> = [
   { title: 'Unsorted', category: null },
@@ -20,6 +19,7 @@ export default function TeacherLivePage() {
   const joinCode = params.joinCode.toUpperCase();
   const router = useRouter();
 
+  const [sessionId, setSessionId] = useState<number | null>(null);
   const [prompt, setPrompt] = useState('');
   const [responses, setResponses] = useState<ResponseCard[]>([]);
   const [studentCount, setStudentCount] = useState(0);
@@ -28,26 +28,18 @@ export default function TeacherLivePage() {
   const [ended, setEnded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [highlighted, setHighlighted] = useState<Set<number>>(new Set());
-  const [authToken, setAuthToken] = useState('');
   const draggingId = useRef<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    const token = getAuthToken();
-    setAuthToken(token);
 
-    if (!token) {
-      setError('Unauthorized. Please sign in on Teacher Dashboard.');
-      setLoading(false);
-      return;
-    }
-
-    getTeacherSession(joinCode, token)
+    getTeacherSession(joinCode)
       .then((data) => {
         if (!mounted) return;
+        setSessionId(data.session.id);
         setPrompt(data.session.prompt);
         setResponses(data.responses);
-        setStudentCount(data.studentCount);
+        setEnded(!data.session.active);
       })
       .catch((err) => {
         if (!mounted) return;
@@ -57,35 +49,95 @@ export default function TeacherLivePage() {
         if (mounted) setLoading(false);
       });
 
-    const socket = createSocket();
-    socket.emit('session:join', { joinCode, role: 'teacher' });
-
-    socket.on('response:new', (payload: ResponseCard) => {
-      setResponses((current) => {
-        if (current.some((item) => item.id === payload.id)) return current;
-        return [payload, ...current];
-      });
-    });
-
-    socket.on('response:category-updated', ({ id, category }: { id: number; category: Category }) => {
-      setResponses((current) =>
-        current.map((item) => (item.id === id ? { ...item, category } : item))
-      );
-    });
-
-    socket.on('session:student-count', ({ count }: { count: number }) => {
-      setStudentCount(count);
-    });
-
-    socket.on('session:ended', () => {
-      setEnded(true);
-    });
-
     return () => {
       mounted = false;
-      socket.disconnect();
     };
   }, [joinCode]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const responsesChannel = supabase
+      .channel(`responses:${sessionId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'responses',
+          filter: `session_id=eq.${sessionId}`
+        },
+        (payload) => {
+          const row = payload.new as {
+            id: number;
+            session_id: number;
+            content: string;
+            created_at: string;
+            category: Category;
+          };
+          setResponses((current) => {
+            if (current.some((item) => item.id === row.id)) return current;
+            return [
+              {
+                id: row.id,
+                sessionId: row.session_id,
+                content: row.content,
+                createdAt: row.created_at,
+                category: row.category
+              },
+              ...current
+            ];
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'responses',
+          filter: `session_id=eq.${sessionId}`
+        },
+        (payload) => {
+          const row = payload.new as { id: number; category: Category };
+          setResponses((current) =>
+            current.map((item) => (item.id === row.id ? { ...item, category: row.category } : item))
+          );
+        }
+      )
+      .subscribe();
+
+    const sessionsChannel = supabase
+      .channel(`sessions:${joinCode}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'sessions',
+          filter: `join_code=eq.${joinCode}`
+        },
+        (payload) => {
+          const row = payload.new as { active: boolean };
+          if (!row.active) setEnded(true);
+        }
+      )
+      .subscribe();
+
+    const presenceChannel = supabase.channel(`presence:${joinCode}`);
+    presenceChannel
+      .on('presence', { event: 'sync' }, () => {
+        const state = presenceChannel.presenceState();
+        setStudentCount(Object.keys(state).length);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(responsesChannel);
+      supabase.removeChannel(sessionsChannel);
+      supabase.removeChannel(presenceChannel);
+    };
+  }, [sessionId, joinCode]);
 
   const grouped = useMemo(() => {
     return CATEGORIES.map((bucket) => ({
@@ -95,12 +147,12 @@ export default function TeacherLivePage() {
   }, [responses]);
 
   async function moveCard(category: Category) {
-    if (draggingId.current === null || !authToken) return;
+    if (draggingId.current === null || ended) return;
     const id = draggingId.current;
 
     setResponses((current) => current.map((item) => (item.id === id ? { ...item, category } : item)));
     try {
-      await updateResponseCategory(joinCode, id, category, authToken);
+      await updateResponseCategory(joinCode, id, category);
     } catch {
       setError('Could not move card. Please try again.');
     }
@@ -116,13 +168,29 @@ export default function TeacherLivePage() {
   }
 
   async function handleEndSession() {
-    if (!authToken) return;
     setError('');
     try {
-      await endSession(joinCode, authToken);
+      await endSession(joinCode);
       setEnded(true);
     } catch {
       setError('Could not end session.');
+    }
+  }
+
+  async function handleExport() {
+    try {
+      const csv = await exportBoardCsv(joinCode);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `oneboard-${joinCode}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError('Could not export board.');
     }
   }
 
@@ -164,9 +232,9 @@ export default function TeacherLivePage() {
             <button className="button" onClick={() => setAnonymousMode((v) => !v)}>
               Anonymous Mode: {anonymousMode ? 'On' : 'Off'}
             </button>
-            <a className="button" href={exportLink(joinCode, authToken)} target="_blank" rel="noreferrer">
+            <button className="button" onClick={handleExport}>
               Export Board (CSV)
-            </a>
+            </button>
             <button className="button" onClick={handleEndSession} disabled={ended}>
               End Session
             </button>

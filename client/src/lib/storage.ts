@@ -1,5 +1,4 @@
 const SESSION_KEY = 'oneboard:teacher-sessions';
-const AUTH_KEY = 'oneboard:teacher-auth-token';
 
 export function getStudentId(joinCode: string) {
   const key = `oneboard:student-id:${joinCode}`;
@@ -35,21 +34,6 @@ export function recordTeacherSession(joinCode: string, prompt: string) {
     .slice(0, 10);
 
   window.localStorage.setItem(SESSION_KEY, JSON.stringify(next));
-}
-
-export function setAuthToken(token: string) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(AUTH_KEY, token);
-}
-
-export function getAuthToken() {
-  if (typeof window === 'undefined') return '';
-  return window.localStorage.getItem(AUTH_KEY) || '';
-}
-
-export function clearAuthToken() {
-  if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(AUTH_KEY);
 }
 
 export function getTeacherSessions() {
