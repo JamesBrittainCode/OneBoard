@@ -132,7 +132,18 @@ export default function TeacherLivePage() {
       })
       .subscribe();
 
+    const pollId = window.setInterval(async () => {
+      try {
+        const data = await getTeacherSession(joinCode);
+        setResponses(data.responses);
+        setEnded(!data.session.active);
+      } catch {
+        // Keep UI stable; realtime may still recover on next tick.
+      }
+    }, 4000);
+
     return () => {
+      window.clearInterval(pollId);
       supabase.removeChannel(responsesChannel);
       supabase.removeChannel(sessionsChannel);
       supabase.removeChannel(presenceChannel);
