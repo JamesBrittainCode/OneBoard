@@ -286,17 +286,18 @@ export async function endSession(joinCode: string) {
 export async function exportBoardCsv(joinCode: string) {
   const board = await getTeacherSession(joinCode);
   const header = ['join_code', 'prompt', 'response_id', 'content', 'category', 'created_at'];
-  const rows = board.responses.map((row) => [
-    board.session.joinCode,
-    board.session.prompt,
-    row.id,
-    row.content,
-    row.category || '',
-    row.createdAt
-  ]);
+  const rows = board.responses.map((row) =>
+    [
+      board.session.joinCode,
+      board.session.prompt,
+      String(row.id),
+      row.content,
+      row.category || '',
+      row.createdAt
+    ].map((value) => String(value))
+  );
 
-  const csv = [header]
-    .concat(rows)
+  const csv = [header, ...rows]
     .map((cols) => cols.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
     .join('\n');
 
