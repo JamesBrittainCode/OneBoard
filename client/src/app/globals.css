@@ -352,12 +352,12 @@ p {
   gap: 10px;
 }
 
-.custom-selection-zone ::selection {
+::selection {
   background: var(--teacher-selection-bg);
   color: var(--teacher-selection-text);
 }
 
-.custom-selection-zone ::-moz-selection {
+::-moz-selection {
   background: var(--teacher-selection-bg);
   color: var(--teacher-selection-text);
 }
