@@ -2,13 +2,39 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { getMe, loginTeacher, logoutTeacher, registerTeacher } from '@/lib/api';
+import {
+  archiveSession,
+  getMe,
+  listTeacherSessions,
+  loginTeacher,
+  logoutTeacher,
+  registerTeacher,
+  reopenSession
+} from '@/lib/api';
 import { CREATED_BY } from '@/lib/branding';
-import { getTeacherSessions } from '@/lib/storage';
+import type { Session } from '@/lib/types';
+
+function formatDuration(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function timerSummary(session: Session) {
+  const total = session.timerHistory.reduce((sum, item) => sum + item.seconds, 0);
+  return {
+    total,
+    rounds: session.timerHistory.length
+  };
+}
 
 export default function TeacherPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
@@ -16,16 +42,26 @@ export default function TeacherPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [userEmail, setUserEmail] = useState('');
+  const [sessions, setSessions] = useState<Session[]>([]);
 
-  const previous = useMemo(() => getTeacherSessions(), []);
+  async function loadSessions() {
+    try {
+      const next = await listTeacherSessions();
+      setSessions(next);
+    } catch (_error) {
+      setSessions([]);
+    }
+  }
 
   useEffect(() => {
     getMe()
-      .then(({ user }) => {
+      .then(async ({ user }) => {
         setUserEmail(user.email);
+        await loadSessions();
       })
       .catch(() => {
         setUserEmail('');
+        setSessions([]);
       })
       .finally(() => {
         setAuthLoading(false);
@@ -47,6 +83,7 @@ export default function TeacherPage() {
       const result = await action(email.trim(), password);
       setUserEmail(result.user.email);
       setPassword('');
+      await loadSessions();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not authenticate.');
     } finally {
@@ -59,10 +96,42 @@ export default function TeacherPage() {
     try {
       await logoutTeacher();
       setUserEmail('');
+      setSessions([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not sign out.');
     }
   }
+
+  async function handleArchive(joinCode: string) {
+    setError('');
+    try {
+      await archiveSession(joinCode);
+      await loadSessions();
+      setNotice('Session archived');
+      window.setTimeout(() => setNotice(''), 1400);
+    } catch {
+      setError('Could not archive session.');
+    }
+  }
+
+  async function handleReopen(joinCode: string) {
+    setError('');
+    try {
+      await reopenSession(joinCode);
+      await loadSessions();
+      setNotice('Session reopened');
+      window.setTimeout(() => setNotice(''), 1400);
+    } catch {
+      setError('Could not reopen session.');
+    }
+  }
+
+  const activeSessions = useMemo(() => sessions.filter((item) => item.active && !item.archived), [sessions]);
+  const endedSessions = useMemo(
+    () => sessions.filter((item) => !item.active && !item.archived),
+    [sessions]
+  );
+  const archivedSessions = useMemo(() => sessions.filter((item) => item.archived), [sessions]);
 
   if (authLoading) {
     return (
@@ -144,24 +213,102 @@ export default function TeacherPage() {
                 <Link href="/teacher/setup" className="button primary">
                   Start New Session
                 </Link>
+                <button className="button" type="button" onClick={loadSessions}>
+                  Refresh
+                </button>
               </div>
 
               <div className="stack">
-                <h2>Recent Sessions</h2>
-                {previous.length === 0 ? (
-                  <p className="muted">No previous sessions yet.</p>
+                <h2>Active Sessions</h2>
+                {activeSessions.length === 0 ? (
+                  <p className="muted">No active sessions.</p>
                 ) : (
-                  previous.map((item) => (
-                    <Link key={item.joinCode} href={`/teacher/live/${item.joinCode}`} className="button">
-                      {item.joinCode} - {item.prompt}
-                    </Link>
-                  ))
+                  activeSessions.map((item) => {
+                    const summary = timerSummary(item);
+                    return (
+                      <div key={item.joinCode} className="session-item">
+                        <p>
+                          <strong>{item.joinCode}</strong> - {item.prompt}
+                        </p>
+                        <p className="muted">
+                          Rounds: {summary.rounds} | Total time: {formatDuration(summary.total)}
+                        </p>
+                        <div className="toolbar">
+                          <Link href={`/teacher/live/${item.joinCode}`} className="button">
+                            Open Live Board
+                          </Link>
+                          <button className="button" onClick={() => handleArchive(item.joinCode)}>
+                            Archive
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="stack">
+                <h2>Past Sessions</h2>
+                {endedSessions.length === 0 ? (
+                  <p className="muted">No ended sessions.</p>
+                ) : (
+                  endedSessions.map((item) => {
+                    const summary = timerSummary(item);
+                    return (
+                      <div key={item.joinCode} className="session-item">
+                        <p>
+                          <strong>{item.joinCode}</strong> - {item.prompt}
+                        </p>
+                        <p className="muted">
+                          Rounds: {summary.rounds} | Total time: {formatDuration(summary.total)}
+                        </p>
+                        <div className="toolbar">
+                          <Link href={`/teacher/live/${item.joinCode}`} className="button">
+                            Open Board
+                          </Link>
+                          <button className="button" onClick={() => handleReopen(item.joinCode)}>
+                            Reopen
+                          </button>
+                          <button className="button" onClick={() => handleArchive(item.joinCode)}>
+                            Archive
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="stack">
+                <h2>Archived</h2>
+                {archivedSessions.length === 0 ? (
+                  <p className="muted">No archived sessions.</p>
+                ) : (
+                  archivedSessions.map((item) => {
+                    const summary = timerSummary(item);
+                    return (
+                      <div key={item.joinCode} className="session-item">
+                        <p>
+                          <strong>{item.joinCode}</strong> - {item.prompt}
+                        </p>
+                        <p className="muted">
+                          Rounds: {summary.rounds} | Total time: {formatDuration(summary.total)}
+                        </p>
+                        <div className="toolbar">
+                          <button className="button" onClick={() => handleReopen(item.joinCode)}>
+                            Reopen
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </>
           )}
 
           {error ? <p className="error">{error}</p> : null}
+          {notice ? <p className="success">{notice}</p> : null}
 
           <p className="created-by">Created by: {CREATED_BY}</p>
         </section>

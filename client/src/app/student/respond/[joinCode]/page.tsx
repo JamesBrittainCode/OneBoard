@@ -2,22 +2,27 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { getSession, submitResponse } from '@/lib/api';
+import ResponseCardView from '@/components/ResponseCard';
+import { getSession, getStudentVisibleResponses, submitResponse } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 import { getStudentId, getStudentName, getSubmissionStatus, setSubmissionStatus } from '@/lib/storage';
+import type { Category, ResponseCard } from '@/lib/types';
 
 export default function StudentRespondPage() {
   const params = useParams<{ joinCode: string }>();
   const joinCode = params.joinCode.toUpperCase();
 
+  const [sessionId, setSessionId] = useState<number | null>(null);
   const [prompt, setPrompt] = useState('');
   const [anonymousMode, setAnonymousMode] = useState(true);
+  const [studentCanViewResponses, setStudentCanViewResponses] = useState(false);
   const [content, setContent] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [ended, setEnded] = useState(false);
+  const [responses, setResponses] = useState<ResponseCard[]>([]);
 
   useEffect(() => {
     setSubmitted(getSubmissionStatus(joinCode));
@@ -25,11 +30,18 @@ export default function StudentRespondPage() {
     let mounted = true;
 
     getSession(joinCode)
-      .then((data) => {
+      .then(async (data) => {
         if (!mounted) return;
+        setSessionId(data.session.id);
         setPrompt(data.session.prompt);
         setAnonymousMode(data.session.anonymousMode);
+        setStudentCanViewResponses(data.session.studentCanViewResponses);
         setEnded(!data.session.active);
+
+        if (data.session.studentCanViewResponses) {
+          const visible = await getStudentVisibleResponses(joinCode);
+          if (mounted) setResponses(visible.responses);
+        }
       })
       .catch((_error) => {
         if (!mounted) return;
@@ -50,11 +62,17 @@ export default function StudentRespondPage() {
           filter: `join_code=eq.${joinCode}`
         },
         (payload) => {
-          const row = payload.new as { active: boolean };
+          const row = payload.new as {
+            active: boolean;
+            anonymous_mode: boolean;
+            student_can_view_responses: boolean;
+          };
           if (!row.active) {
             setEnded(true);
             setError('Session has ended.');
           }
+          setAnonymousMode(row.anonymous_mode);
+          setStudentCanViewResponses(row.student_can_view_responses);
         }
       )
       .subscribe();
@@ -75,6 +93,81 @@ export default function StudentRespondPage() {
       supabase.removeChannel(presenceChannel);
     };
   }, [joinCode]);
+
+  useEffect(() => {
+    if (!sessionId || !studentCanViewResponses) return;
+
+    const responsesChannel = supabase
+      .channel(`student-responses:${sessionId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'responses',
+          filter: `session_id=eq.${sessionId}`
+        },
+        (payload) => {
+          const row = payload.new as {
+            id: number;
+            session_id: number;
+            content: string;
+            created_at: string;
+            category: Category;
+            student_name: string | null;
+          };
+          setResponses((current) => {
+            if (current.some((item) => item.id === row.id)) return current;
+            return [
+              {
+                id: row.id,
+                sessionId: row.session_id,
+                content: row.content,
+                createdAt: row.created_at,
+                category: row.category,
+                studentName: row.student_name
+              },
+              ...current
+            ];
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'responses',
+          filter: `session_id=eq.${sessionId}`
+        },
+        (payload) => {
+          const row = payload.new as { id: number; category: Category; student_name: string | null };
+          setResponses((current) =>
+            current.map((item) =>
+              item.id === row.id ? { ...item, category: row.category, studentName: row.student_name } : item
+            )
+          );
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'responses',
+          filter: `session_id=eq.${sessionId}`
+        },
+        (payload) => {
+          const row = payload.old as { id: number };
+          setResponses((current) => current.filter((item) => item.id !== row.id));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(responsesChannel);
+    };
+  }, [sessionId, studentCanViewResponses]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -138,6 +231,23 @@ export default function StudentRespondPage() {
 
         {submitted ? <p className="success">Your response was submitted.</p> : null}
         {error ? <p className="error">{error}</p> : null}
+
+        {studentCanViewResponses ? (
+          <section className="stack">
+            <h2>Class Responses</h2>
+            <div className="student-responses-grid">
+              {responses.map((card) => (
+                <ResponseCardView
+                  key={card.id}
+                  card={card}
+                  anonymousMode={anonymousMode}
+                  highlighted={false}
+                  onToggleHighlight={() => {}}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
       </section>
     </main>
   );

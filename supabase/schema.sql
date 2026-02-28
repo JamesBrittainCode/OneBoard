@@ -12,7 +12,12 @@ create table if not exists public.sessions (
   anonymous_mode boolean not null default true,
   section_label_1 text not null default 'Strong Thinking',
   section_label_2 text not null default 'Needs Clarification',
-  section_label_3 text not null default 'Misconception'
+  section_label_3 text not null default 'Misconception',
+  submissions_frozen boolean not null default false,
+  student_can_view_responses boolean not null default false,
+  archived boolean not null default false,
+  active_started_at timestamptz,
+  timer_history jsonb not null default '[]'::jsonb
 );
 
 alter table public.sessions
@@ -20,7 +25,12 @@ alter table public.sessions
   add column if not exists anonymous_mode boolean not null default true,
   add column if not exists section_label_1 text not null default 'Strong Thinking',
   add column if not exists section_label_2 text not null default 'Needs Clarification',
-  add column if not exists section_label_3 text not null default 'Misconception';
+  add column if not exists section_label_3 text not null default 'Misconception',
+  add column if not exists submissions_frozen boolean not null default false,
+  add column if not exists student_can_view_responses boolean not null default false,
+  add column if not exists archived boolean not null default false,
+  add column if not exists active_started_at timestamptz,
+  add column if not exists timer_history jsonb not null default '[]'::jsonb;
 
 alter table public.sessions
   drop constraint if exists sessions_board_mode_check;
@@ -83,6 +93,22 @@ create policy "responses_select_owner"
       from public.sessions s
       where s.id = responses.session_id
         and s.teacher_user_id = auth.uid()
+    )
+  );
+
+-- Responses: students can view responses if teacher enabled student view.
+drop policy if exists "responses_select_student_view" on public.responses;
+create policy "responses_select_student_view"
+  on public.responses
+  for select
+  to anon, authenticated
+  using (
+    exists (
+      select 1
+      from public.sessions s
+      where s.id = responses.session_id
+        and s.active = true
+        and s.student_can_view_responses = true
     )
   );
 

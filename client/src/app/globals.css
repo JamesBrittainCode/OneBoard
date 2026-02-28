@@ -285,6 +285,39 @@ p {
   gap: 10px;
 }
 
+.session-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.analytics-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.analytics-card h3 {
+  font-size: 0.95rem;
+}
+
+.student-responses-grid {
+  display: grid;
+  gap: 10px;
+}
+
 .error {
   color: #a22222;
   font-size: 0.94rem;
@@ -312,6 +345,10 @@ p {
   }
 
   .section-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-grid {
     grid-template-columns: 1fr;
   }
 }

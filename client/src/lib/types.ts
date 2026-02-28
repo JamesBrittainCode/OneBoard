@@ -10,6 +10,15 @@ export interface Session {
   boardMode: BoardMode;
   anonymousMode: boolean;
   sectionLabels: [string, string, string];
+  submissionsFrozen: boolean;
+  studentCanViewResponses: boolean;
+  archived: boolean;
+  activeStartedAt: string | null;
+  timerHistory: Array<{
+    startedAt: string;
+    endedAt: string;
+    seconds: number;
+  }>;
 }
 
 export interface ResponseCard {

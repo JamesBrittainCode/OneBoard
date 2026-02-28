@@ -4,10 +4,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import CategoryColumn from '@/components/CategoryColumn';
 import {
+  archiveSession,
   deleteResponse,
   endSession,
   exportBoardCsv,
   getTeacherSession,
+  reopenSession,
   updateResponseCategory,
   updateSessionSettings
 } from '@/lib/api';
@@ -21,6 +23,51 @@ const DEFAULT_SECTIONS: [string, string, string] = [
 ];
 
 const DEFAULT_CATEGORIES: Category[] = ['Strong Thinking', 'Needs Clarification', 'Misconception'];
+const STOP_WORDS = new Set([
+  'the',
+  'and',
+  'for',
+  'that',
+  'with',
+  'this',
+  'from',
+  'have',
+  'your',
+  'they',
+  'their',
+  'about',
+  'what',
+  'when',
+  'where',
+  'which',
+  'were',
+  'there',
+  'just',
+  'like',
+  'into',
+  'could',
+  'would',
+  'should',
+  'because',
+  'after',
+  'before',
+  'also',
+  'some',
+  'than',
+  'then',
+  'them',
+  'over',
+  'under'
+]);
+
+function formatDuration(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
 
 export default function TeacherLivePage() {
   const params = useParams<{ joinCode: string }>();
@@ -35,11 +82,19 @@ export default function TeacherLivePage() {
   const [anonymousMode, setAnonymousMode] = useState(true);
   const [boardMode, setBoardMode] = useState<BoardMode>('categorized');
   const [sectionLabels, setSectionLabels] = useState<[string, string, string]>(DEFAULT_SECTIONS);
+  const [submissionsFrozen, setSubmissionsFrozen] = useState(false);
+  const [studentCanViewResponses, setStudentCanViewResponses] = useState(false);
+  const [activeStartedAt, setActiveStartedAt] = useState<string | null>(null);
+  const [timerHistory, setTimerHistory] = useState<Array<{ startedAt: string; endedAt: string; seconds: number }>>(
+    []
+  );
   const [ended, setEnded] = useState(false);
+  const [archived, setArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [highlighted, setHighlighted] = useState<Set<number>>(new Set());
   const [savingSettings, setSavingSettings] = useState(false);
   const [notice, setNotice] = useState('');
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const draggingId = useRef<number | null>(null);
 
   useEffect(() => {
@@ -52,9 +107,14 @@ export default function TeacherLivePage() {
         setPrompt(data.session.prompt);
         setResponses(data.responses);
         setEnded(!data.session.active);
+        setArchived(data.session.archived);
         setAnonymousMode(data.session.anonymousMode);
         setBoardMode(data.session.boardMode);
         setSectionLabels(data.session.sectionLabels);
+        setSubmissionsFrozen(data.session.submissionsFrozen);
+        setStudentCanViewResponses(data.session.studentCanViewResponses);
+        setActiveStartedAt(data.session.activeStartedAt);
+        setTimerHistory(data.session.timerHistory);
       })
       .catch((err) => {
         if (!mounted) return;
@@ -68,6 +128,22 @@ export default function TeacherLivePage() {
       mounted = false;
     };
   }, [joinCode]);
+
+  useEffect(() => {
+    if (!activeStartedAt || ended) {
+      setElapsedSeconds(0);
+      return;
+    }
+
+    const tick = () => {
+      const elapsed = Math.max(0, Math.floor((Date.now() - Date.parse(activeStartedAt)) / 1000));
+      setElapsedSeconds(elapsed);
+    };
+
+    tick();
+    const intervalId = window.setInterval(tick, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [activeStartedAt, ended]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -152,16 +228,26 @@ export default function TeacherLivePage() {
         (payload) => {
           const row = payload.new as {
             active: boolean;
+            archived: boolean;
             anonymous_mode: boolean;
             board_mode: BoardMode;
             section_label_1: string;
             section_label_2: string;
             section_label_3: string;
+            submissions_frozen: boolean;
+            student_can_view_responses: boolean;
+            active_started_at: string | null;
+            timer_history: Array<{ startedAt: string; endedAt: string; seconds: number }>;
           };
           setEnded(!row.active);
+          setArchived(row.archived);
           setAnonymousMode(row.anonymous_mode);
           setBoardMode(row.board_mode);
           setSectionLabels([row.section_label_1, row.section_label_2, row.section_label_3]);
+          setSubmissionsFrozen(row.submissions_frozen);
+          setStudentCanViewResponses(row.student_can_view_responses);
+          setActiveStartedAt(row.active_started_at);
+          setTimerHistory(Array.isArray(row.timer_history) ? row.timer_history : []);
         }
       )
       .subscribe();
@@ -179,9 +265,14 @@ export default function TeacherLivePage() {
         const data = await getTeacherSession(joinCode);
         setResponses(data.responses);
         setEnded(!data.session.active);
+        setArchived(data.session.archived);
         setAnonymousMode(data.session.anonymousMode);
         setBoardMode(data.session.boardMode);
         setSectionLabels(data.session.sectionLabels);
+        setSubmissionsFrozen(data.session.submissionsFrozen);
+        setStudentCanViewResponses(data.session.studentCanViewResponses);
+        setActiveStartedAt(data.session.activeStartedAt);
+        setTimerHistory(data.session.timerHistory);
       } catch {
         // Keep UI stable; realtime may still recover on next tick.
       }
@@ -211,12 +302,39 @@ export default function TeacherLivePage() {
     }));
   }, [responses, boardMode, sectionLabels]);
 
+  const analytics = useMemo(() => {
+    const categoryCounts = {
+      unsorted: responses.filter((row) => row.category === null).length,
+      section1: responses.filter((row) => row.category === DEFAULT_CATEGORIES[0]).length,
+      section2: responses.filter((row) => row.category === DEFAULT_CATEGORIES[1]).length,
+      section3: responses.filter((row) => row.category === DEFAULT_CATEGORIES[2]).length
+    };
+
+    const terms = new Map<string, number>();
+    for (const row of responses) {
+      const tokens = row.content.toLowerCase().split(/[^a-z0-9]+/g).filter(Boolean);
+      for (const token of tokens) {
+        if (token.length < 4 || STOP_WORDS.has(token)) continue;
+        terms.set(token, (terms.get(token) || 0) + 1);
+      }
+    }
+
+    const topTerms = [...terms.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([term, count]) => ({ term, count }));
+
+    return { categoryCounts, topTerms };
+  }, [responses]);
+
   async function saveSettings(next: {
     boardMode?: BoardMode;
     anonymousMode?: boolean;
     sectionLabels?: [string, string, string];
+    submissionsFrozen?: boolean;
+    studentCanViewResponses?: boolean;
   }) {
-    if (ended) return;
+    if (ended || archived) return;
     setSavingSettings(true);
     setError('');
     try {
@@ -252,18 +370,8 @@ export default function TeacherLivePage() {
     });
   }
 
-  async function handleEndSession() {
-    setError('');
-    try {
-      await endSession(joinCode);
-      setEnded(true);
-    } catch {
-      setError('Could not end session.');
-    }
-  }
-
   async function handleDeleteResponse(responseId: number) {
-    if (ended) return;
+    if (ended || archived) return;
     const previous = responses;
     setResponses((current) => current.filter((item) => item.id !== responseId));
     try {
@@ -273,6 +381,56 @@ export default function TeacherLivePage() {
     } catch {
       setResponses(previous);
       setError('Could not delete response.');
+    }
+  }
+
+  async function handleEndSession() {
+    setError('');
+    try {
+      await endSession(joinCode);
+      setEnded(true);
+      setSubmissionsFrozen(false);
+      const data = await getTeacherSession(joinCode);
+      setTimerHistory(data.session.timerHistory);
+      setActiveStartedAt(data.session.activeStartedAt);
+      setNotice('Session ended');
+      window.setTimeout(() => setNotice(''), 1400);
+    } catch {
+      setError('Could not end session.');
+    }
+  }
+
+  async function handleReopenSession() {
+    setError('');
+    try {
+      await reopenSession(joinCode);
+      const data = await getTeacherSession(joinCode);
+      setEnded(!data.session.active);
+      setArchived(data.session.archived);
+      setSubmissionsFrozen(data.session.submissionsFrozen);
+      setActiveStartedAt(data.session.activeStartedAt);
+      setTimerHistory(data.session.timerHistory);
+      setNotice('Session reopened');
+      window.setTimeout(() => setNotice(''), 1400);
+    } catch {
+      setError('Could not reopen session.');
+    }
+  }
+
+  async function handleArchiveSession() {
+    setError('');
+    try {
+      await archiveSession(joinCode);
+      const data = await getTeacherSession(joinCode);
+      setEnded(!data.session.active);
+      setArchived(data.session.archived);
+      setSubmissionsFrozen(data.session.submissionsFrozen);
+      setActiveStartedAt(data.session.activeStartedAt);
+      setTimerHistory(data.session.timerHistory);
+      setNotice('Session archived');
+      window.setTimeout(() => setNotice(''), 1400);
+    } catch {
+      setError('Could not archive session.');
     }
   }
 
@@ -346,7 +504,15 @@ export default function TeacherLivePage() {
           <div className="badges">
             <span className="badge">Join Code: {joinCode}</span>
             <span className="badge">Students Live: {studentCount}</span>
+            <span className="badge">Submissions: {submissionsFrozen ? 'Frozen' : 'Open'}</span>
             {ended ? <span className="badge">Session Ended</span> : null}
+            {archived ? <span className="badge">Archived</span> : null}
+          </div>
+          <div className="badges">
+            <span className="badge">
+              Current Round Time: {ended || !activeStartedAt ? 'Not running' : formatDuration(elapsedSeconds)}
+            </span>
+            <span className="badge">Timer History: {timerHistory.length} rounds</span>
           </div>
           <div className="toolbar">
             <button
@@ -359,7 +525,7 @@ export default function TeacherLivePage() {
                   setAnonymousMode(prev);
                 });
               }}
-              disabled={savingSettings}
+              disabled={savingSettings || ended || archived}
             >
               Anonymous Mode: {anonymousMode ? 'On' : 'Off'}
             </button>
@@ -373,9 +539,37 @@ export default function TeacherLivePage() {
                   setBoardMode(prev);
                 });
               }}
-              disabled={savingSettings}
+              disabled={savingSettings || ended || archived}
             >
               Mode: {boardMode === 'categorized' ? 'Categorized' : 'Open Space'}
+            </button>
+            <button
+              className="button"
+              onClick={() => {
+                const prev = submissionsFrozen;
+                const next = !prev;
+                setSubmissionsFrozen(next);
+                saveSettings({ submissionsFrozen: next }).catch(() => {
+                  setSubmissionsFrozen(prev);
+                });
+              }}
+              disabled={savingSettings || ended || archived}
+            >
+              {submissionsFrozen ? 'Unfreeze Submissions' : 'Freeze Submissions'}
+            </button>
+            <button
+              className="button"
+              onClick={() => {
+                const prev = studentCanViewResponses;
+                const next = !prev;
+                setStudentCanViewResponses(next);
+                saveSettings({ studentCanViewResponses: next }).catch(() => {
+                  setStudentCanViewResponses(prev);
+                });
+              }}
+              disabled={savingSettings || ended || archived}
+            >
+              Student View: {studentCanViewResponses ? 'Enabled' : 'Disabled'}
             </button>
             <button className="button" onClick={copyJoinCode}>
               Copy Join Code
@@ -386,8 +580,17 @@ export default function TeacherLivePage() {
             <button className="button" onClick={handleExport}>
               Export Board (CSV)
             </button>
-            <button className="button" onClick={handleEndSession} disabled={ended}>
-              End Session
+            {ended ? (
+              <button className="button" onClick={handleReopenSession} disabled={archived}>
+                Reopen Session
+              </button>
+            ) : (
+              <button className="button" onClick={handleEndSession}>
+                End Session
+              </button>
+            )}
+            <button className="button" onClick={handleArchiveSession}>
+              Archive Session
             </button>
           </div>
 
@@ -415,17 +618,57 @@ export default function TeacherLivePage() {
                     });
                   }}
                   placeholder={`Section ${index + 1}`}
-                  disabled={savingSettings}
+                  disabled={savingSettings || ended || archived}
                 />
               ))}
             </div>
           ) : null}
 
+          <div className="analytics-grid">
+            <section className="analytics-card">
+              <h3>Category Counts</h3>
+              <p>Unsorted: {analytics.categoryCounts.unsorted}</p>
+              <p>{sectionLabels[0]}: {analytics.categoryCounts.section1}</p>
+              <p>{sectionLabels[1]}: {analytics.categoryCounts.section2}</p>
+              <p>{sectionLabels[2]}: {analytics.categoryCounts.section3}</p>
+            </section>
+            <section className="analytics-card">
+              <h3>Top Terms</h3>
+              {analytics.topTerms.length === 0 ? (
+                <p className="muted">No recurring terms yet.</p>
+              ) : (
+                analytics.topTerms.map((item) => (
+                  <p key={item.term}>
+                    {item.term}: {item.count}
+                  </p>
+                ))
+              )}
+            </section>
+            <section className="analytics-card">
+              <h3>Timer History</h3>
+              {timerHistory.length === 0 ? (
+                <p className="muted">No completed rounds yet.</p>
+              ) : (
+                timerHistory.map((item, index) => (
+                  <p key={`${item.startedAt}-${index}`}>
+                    Round {index + 1}: {formatDuration(item.seconds)}
+                  </p>
+                ))
+              )}
+            </section>
+          </div>
+
           {error ? <p className="error">{error}</p> : null}
           {notice ? <p className="success">{notice}</p> : null}
         </div>
 
-        <div className="columns" style={{ padding: '0 14px 14px', gridTemplateColumns: boardMode === 'open' ? '1fr' : undefined }}>
+        <div
+          className="columns"
+          style={{
+            padding: '0 14px 14px',
+            gridTemplateColumns: boardMode === 'open' ? '1fr' : undefined
+          }}
+        >
           {grouped.map((bucket) => (
             <CategoryColumn
               key={bucket.title}
@@ -440,7 +683,7 @@ export default function TeacherLivePage() {
                 draggingId.current = id;
               }}
               onDropCard={moveCard}
-              dragEnabled={boardMode === 'categorized'}
+              dragEnabled={boardMode === 'categorized' && !ended && !archived}
             />
           ))}
         </div>
