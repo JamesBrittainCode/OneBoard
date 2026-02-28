@@ -7,6 +7,9 @@
   --shadow: 0 10px 30px rgba(15, 22, 31, 0.08);
   --radius-lg: 18px;
   --radius-md: 14px;
+  /* Edit these two values in code to control text selection styling on the teacher board. */
+  --teacher-selection-bg: #ffe98f;
+  --teacher-selection-text: #1a1a1a;
 }
 
 * {
@@ -347,6 +350,16 @@ p {
 .student-responses-grid {
   display: grid;
   gap: 10px;
+}
+
+.custom-selection-zone ::selection {
+  background: var(--teacher-selection-bg);
+  color: var(--teacher-selection-text);
+}
+
+.custom-selection-zone ::-moz-selection {
+  background: var(--teacher-selection-bg);
+  color: var(--teacher-selection-text);
 }
 
 .settings-overlay {

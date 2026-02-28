@@ -537,7 +537,7 @@ export default function TeacherLivePage() {
         </div>
 
         <div
-          className="columns"
+          className="columns custom-selection-zone"
           style={{
             padding: '0 14px 14px',
             gridTemplateColumns: boardMode === 'open' ? '1fr' : undefined
