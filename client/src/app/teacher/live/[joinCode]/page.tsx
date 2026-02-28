@@ -95,6 +95,7 @@ export default function TeacherLivePage() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [notice, setNotice] = useState('');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const draggingId = useRef<number | null>(null);
 
   useEffect(() => {
@@ -506,7 +507,17 @@ export default function TeacherLivePage() {
     <main className="shell">
       <section className="panel board">
         <div className="board-top">
-          <h1>{prompt}</h1>
+          <div className="board-header">
+            <h1>{prompt}</h1>
+            <button
+              className="settings-trigger"
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Open board settings"
+            >
+              <span aria-hidden>⚙</span>
+              <span>Settings</span>
+            </button>
+          </div>
           <div className="badges">
             <span className="badge">Join Code: {joinCode}</span>
             <span className="badge">Students Live: {studentCount}</span>
@@ -520,86 +531,72 @@ export default function TeacherLivePage() {
             </span>
             <span className="badge">Timer History: {timerHistory.length} rounds</span>
           </div>
-          <div className="toolbar">
-            <button
-              className="button"
-              onClick={() => {
-                const prev = anonymousMode;
-                const next = !prev;
-                setAnonymousMode(next);
-                saveSettings({ anonymousMode: next }).catch(() => {
-                  setAnonymousMode(prev);
-                });
-              }}
-              disabled={savingSettings || ended || archived}
-            >
-              Anonymous Mode: {anonymousMode ? 'On' : 'Off'}
-            </button>
-            <button
-              className="button"
-              onClick={() => {
-                const prev = boardMode;
-                const next = prev === 'categorized' ? 'open' : 'categorized';
-                setBoardMode(next);
-                saveSettings({ boardMode: next }).catch(() => {
-                  setBoardMode(prev);
-                });
-              }}
-              disabled={savingSettings || ended || archived}
-            >
-              Mode: {boardMode === 'categorized' ? 'Categorized' : 'Open Space'}
-            </button>
-            <button
-              className="button"
-              onClick={() => {
-                const prev = submissionsFrozen;
-                const next = !prev;
-                setSubmissionsFrozen(next);
-                saveSettings({ submissionsFrozen: next }).catch(() => {
-                  setSubmissionsFrozen(prev);
-                });
-              }}
-              disabled={savingSettings || ended || archived}
-            >
-              {submissionsFrozen ? 'Unfreeze Submissions' : 'Freeze Submissions'}
-            </button>
-            <button
-              className="button"
-              onClick={() => {
-                const prev = studentCanViewResponses;
-                const next = !prev;
-                setStudentCanViewResponses(next);
-                saveSettings({ studentCanViewResponses: next }).catch(() => {
-                  setStudentCanViewResponses(prev);
-                });
-              }}
-              disabled={savingSettings || ended || archived}
-            >
-              Student View: {studentCanViewResponses ? 'Enabled' : 'Disabled'}
-            </button>
-            <button className="button" onClick={copyJoinCode}>
-              Copy Join Code
-            </button>
-            <button className="button" onClick={copyJoinLink}>
-              Copy Student Link
-            </button>
-            <button className="button" onClick={handleExport}>
-              Export Board (CSV)
-            </button>
-            {ended ? (
-              <button className="button" onClick={handleReopenSession} disabled={archived}>
-                Reopen Session
-              </button>
-            ) : (
-              <button className="button" onClick={handleEndSession}>
-                End Session
-              </button>
-            )}
-            <button className="button" onClick={handleArchiveSession}>
-              Archive Session
-            </button>
-          </div>
 
+          {error ? <p className="error">{error}</p> : null}
+          {notice ? <p className="success">{notice}</p> : null}
+        </div>
+
+        <div
+          className="columns"
+          style={{
+            padding: '0 14px 14px',
+            gridTemplateColumns: boardMode === 'open' ? '1fr' : undefined
+          }}
+        >
+          {grouped.map((bucket) => (
+            <CategoryColumn
+              key={bucket.title}
+              title={bucket.title}
+              category={bucket.category}
+              cards={bucket.cards}
+              anonymousMode={anonymousMode}
+              highlighted={highlighted}
+              onToggleHighlight={toggleHighlight}
+              onDelete={handleDeleteResponse}
+              onDragStart={(id) => {
+                draggingId.current = id;
+              }}
+              onDropCard={moveCard}
+              dragEnabled={boardMode === 'categorized' && !ended && !archived}
+            />
+          ))}
+        </div>
+      </section>
+
+      {settingsOpen ? <div className="settings-overlay" onClick={() => setSettingsOpen(false)} /> : null}
+
+      <aside className={`settings-drawer ${settingsOpen ? 'open' : ''}`} aria-hidden={!settingsOpen}>
+        <div className="settings-head">
+          <h2>Board Settings</h2>
+          <button className="button" onClick={() => setSettingsOpen(false)}>
+            Close
+          </button>
+        </div>
+
+        <div className="settings-group">
+          <h3>
+            <span aria-hidden>🧩</span> Board Mode
+          </h3>
+          <button
+            className="button"
+            onClick={() => {
+              const prev = boardMode;
+              const next = prev === 'categorized' ? 'open' : 'categorized';
+              setBoardMode(next);
+              saveSettings({ boardMode: next }).catch(() => {
+                setBoardMode(prev);
+              });
+            }}
+            disabled={savingSettings || ended || archived}
+          >
+            {boardMode === 'categorized' ? 'Switch to Open Space' : 'Switch to Categorized'}
+          </button>
+        </div>
+
+        <div className="settings-group">
+          <h3>
+            <span aria-hidden>🏷</span> Section Labels
+          </h3>
           {boardMode === 'categorized' ? (
             <div className="section-edit-grid">
               {sectionLabels.map((label, index) => (
@@ -628,8 +625,84 @@ export default function TeacherLivePage() {
                 />
               ))}
             </div>
-          ) : null}
+          ) : (
+            <p className="muted">Section names are available in categorized mode.</p>
+          )}
+        </div>
 
+        <div className="settings-group">
+          <h3>
+            <span aria-hidden>🙈</span> Privacy
+          </h3>
+          <button
+            className="button"
+            onClick={() => {
+              const prev = anonymousMode;
+              const next = !prev;
+              setAnonymousMode(next);
+              saveSettings({ anonymousMode: next }).catch(() => {
+                setAnonymousMode(prev);
+              });
+            }}
+            disabled={savingSettings || ended || archived}
+          >
+            Anonymous Mode: {anonymousMode ? 'On' : 'Off'}
+          </button>
+        </div>
+
+        <div className="settings-group">
+          <h3>
+            <span aria-hidden>🎛</span> Student Controls
+          </h3>
+          <button
+            className="button"
+            onClick={() => {
+              const prev = submissionsFrozen;
+              const next = !prev;
+              setSubmissionsFrozen(next);
+              saveSettings({ submissionsFrozen: next }).catch(() => {
+                setSubmissionsFrozen(prev);
+              });
+            }}
+            disabled={savingSettings || ended || archived}
+          >
+            {submissionsFrozen ? 'Unfreeze Submissions' : 'Freeze Submissions'}
+          </button>
+          <button
+            className="button"
+            onClick={() => {
+              const prev = studentCanViewResponses;
+              const next = !prev;
+              setStudentCanViewResponses(next);
+              saveSettings({ studentCanViewResponses: next }).catch(() => {
+                setStudentCanViewResponses(prev);
+              });
+            }}
+            disabled={savingSettings || ended || archived}
+          >
+            Student View: {studentCanViewResponses ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
+
+        <div className="settings-group">
+          <h3>
+            <span aria-hidden>📤</span> Share & Export
+          </h3>
+          <button className="button" onClick={copyJoinCode}>
+            Copy Join Code
+          </button>
+          <button className="button" onClick={copyJoinLink}>
+            Copy Student Link
+          </button>
+          <button className="button" onClick={handleExport}>
+            Export Board (CSV)
+          </button>
+        </div>
+
+        <div className="settings-group">
+          <h3>
+            <span aria-hidden>⏱</span> Analytics
+          </h3>
           <div className="analytics-grid">
             <section className="analytics-card">
               <h3>Category Counts</h3>
@@ -663,37 +736,26 @@ export default function TeacherLivePage() {
               )}
             </section>
           </div>
-
-          {error ? <p className="error">{error}</p> : null}
-          {notice ? <p className="success">{notice}</p> : null}
         </div>
 
-        <div
-          className="columns"
-          style={{
-            padding: '0 14px 14px',
-            gridTemplateColumns: boardMode === 'open' ? '1fr' : undefined
-          }}
-        >
-          {grouped.map((bucket) => (
-            <CategoryColumn
-              key={bucket.title}
-              title={bucket.title}
-              category={bucket.category}
-              cards={bucket.cards}
-              anonymousMode={anonymousMode}
-              highlighted={highlighted}
-              onToggleHighlight={toggleHighlight}
-              onDelete={handleDeleteResponse}
-              onDragStart={(id) => {
-                draggingId.current = id;
-              }}
-              onDropCard={moveCard}
-              dragEnabled={boardMode === 'categorized' && !ended && !archived}
-            />
-          ))}
+        <div className="settings-group">
+          <h3>
+            <span aria-hidden>🧯</span> Session Actions
+          </h3>
+          {ended ? (
+            <button className="button" onClick={handleReopenSession} disabled={archived}>
+              Reopen Session
+            </button>
+          ) : (
+            <button className="button" onClick={handleEndSession}>
+              End Session
+            </button>
+          )}
+          <button className="button" onClick={handleArchiveSession}>
+            Archive Session
+          </button>
         </div>
-      </section>
+      </aside>
     </main>
   );
 }
