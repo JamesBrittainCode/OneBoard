@@ -1,5 +1,6 @@
 export type Category = 'Strong Thinking' | 'Needs Clarification' | 'Misconception' | null;
 export type BoardMode = 'categorized' | 'open';
+export type ReactionType = 'helpful' | 'interesting' | 'need_example';
 
 export interface Session {
   id: number;
@@ -28,4 +29,10 @@ export interface ResponseCard {
   createdAt: string;
   category: Category;
   studentName: string | null;
+  reactionCounts: {
+    helpful: number;
+    interesting: number;
+    needExample: number;
+  };
+  myReaction: ReactionType | null;
 }

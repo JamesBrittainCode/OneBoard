@@ -176,7 +176,13 @@ export default function TeacherLivePage() {
                 content: row.content,
                 createdAt: row.created_at,
                 category: row.category,
-                studentName: row.student_name
+                studentName: row.student_name,
+                reactionCounts: {
+                  helpful: 0,
+                  interesting: 0,
+                  needExample: 0
+                },
+                myReaction: null
               },
               ...current
             ];

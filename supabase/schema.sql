@@ -53,8 +53,20 @@ create table if not exists public.responses (
 alter table public.responses
   add column if not exists student_name text;
 
+create table if not exists public.response_reactions (
+  id bigint generated always as identity primary key,
+  response_id bigint not null references public.responses(id) on delete cascade,
+  student_id text not null,
+  reaction_type text not null,
+  created_at timestamptz not null default now(),
+  constraint response_reactions_unique unique (response_id, student_id),
+  constraint response_reactions_type_check
+    check (reaction_type in ('helpful', 'interesting', 'need_example'))
+);
+
 alter table public.sessions enable row level security;
 alter table public.responses enable row level security;
+alter table public.response_reactions enable row level security;
 
 -- Sessions: students can read active sessions by join code.
 drop policy if exists "sessions_select_active" on public.sessions;
@@ -162,5 +174,86 @@ create policy "responses_delete_owner"
       from public.sessions s
       where s.id = responses.session_id
         and s.teacher_user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "response_reactions_select_student_view" on public.response_reactions;
+create policy "response_reactions_select_student_view"
+  on public.response_reactions
+  for select
+  to anon, authenticated
+  using (
+    exists (
+      select 1
+      from public.responses r
+      join public.sessions s on s.id = r.session_id
+      where r.id = response_reactions.response_id
+        and s.active = true
+        and s.student_can_view_responses = true
+    )
+    or exists (
+      select 1
+      from public.responses r
+      join public.sessions s on s.id = r.session_id
+      where r.id = response_reactions.response_id
+        and s.teacher_user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "response_reactions_insert_student_view" on public.response_reactions;
+create policy "response_reactions_insert_student_view"
+  on public.response_reactions
+  for insert
+  to anon, authenticated
+  with check (
+    exists (
+      select 1
+      from public.responses r
+      join public.sessions s on s.id = r.session_id
+      where r.id = response_reactions.response_id
+        and s.active = true
+        and s.student_can_view_responses = true
+    )
+  );
+
+drop policy if exists "response_reactions_update_own" on public.response_reactions;
+create policy "response_reactions_update_own"
+  on public.response_reactions
+  for update
+  to anon, authenticated
+  using (
+    exists (
+      select 1
+      from public.responses r
+      join public.sessions s on s.id = r.session_id
+      where r.id = response_reactions.response_id
+        and s.active = true
+        and s.student_can_view_responses = true
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.responses r
+      join public.sessions s on s.id = r.session_id
+      where r.id = response_reactions.response_id
+        and s.active = true
+        and s.student_can_view_responses = true
+    )
+  );
+
+drop policy if exists "response_reactions_delete_own" on public.response_reactions;
+create policy "response_reactions_delete_own"
+  on public.response_reactions
+  for delete
+  to anon, authenticated
+  using (
+    exists (
+      select 1
+      from public.responses r
+      join public.sessions s on s.id = r.session_id
+      where r.id = response_reactions.response_id
+        and s.active = true
+        and s.student_can_view_responses = true
     )
   );

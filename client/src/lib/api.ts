@@ -1,4 +1,4 @@
-import type { BoardMode, Category, ResponseCard, Session } from './types';
+import type { BoardMode, Category, ReactionType, ResponseCard, Session } from './types';
 import { hasSupabaseEnv, supabase } from './supabase';
 
 interface TeacherUser {
@@ -31,6 +31,13 @@ type ResponseRow = {
   created_at: string;
   category: Category;
   student_name: string | null;
+};
+
+type ReactionRow = {
+  id: number;
+  response_id: number;
+  student_id: string;
+  reaction_type: ReactionType;
 };
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -102,8 +109,50 @@ function toResponse(row: ResponseRow): ResponseCard {
     content: row.content,
     createdAt: row.created_at,
     category: row.category,
-    studentName: row.student_name
+    studentName: row.student_name,
+    reactionCounts: {
+      helpful: 0,
+      interesting: 0,
+      needExample: 0
+    },
+    myReaction: null
   };
+}
+
+function reactionKey(type: ReactionType) {
+  if (type === 'need_example') return 'needExample' as const;
+  return type;
+}
+
+function applyReactionStats(
+  responses: ResponseCard[],
+  reactions: ReactionRow[],
+  viewerStudentId?: string
+) {
+  const map = new Map<number, ResponseCard>();
+  for (const response of responses) {
+    map.set(response.id, {
+      ...response,
+      reactionCounts: {
+        helpful: 0,
+        interesting: 0,
+        needExample: 0
+      },
+      myReaction: null
+    });
+  }
+
+  for (const reaction of reactions) {
+    const target = map.get(reaction.response_id);
+    if (!target) continue;
+    const key = reactionKey(reaction.reaction_type);
+    target.reactionCounts[key] += 1;
+    if (viewerStudentId && reaction.student_id === viewerStudentId) {
+      target.myReaction = reaction.reaction_type;
+    }
+  }
+
+  return responses.map((row) => map.get(row.id) || row);
 }
 
 function createJoinCode(length = 6) {
@@ -292,14 +341,26 @@ export async function getTeacherSession(joinCode: string) {
 
   if (responseError) throw new Error(responseError.message);
 
+  const baseResponses = (responseRows || []).map((row) => toResponse(row as unknown as ResponseRow));
+  const responseIds = baseResponses.map((row) => row.id);
+  let reactionRows: ReactionRow[] = [];
+  if (responseIds.length > 0) {
+    const { data: reactionData, error: reactionError } = await supabase
+      .from('response_reactions')
+      .select('id,response_id,student_id,reaction_type')
+      .in('response_id', responseIds);
+    if (reactionError) throw new Error(reactionError.message);
+    reactionRows = (reactionData || []) as ReactionRow[];
+  }
+
   return {
     session: toSession(sessionRow),
-    responses: (responseRows || []).map((row) => toResponse(row as unknown as ResponseRow)),
+    responses: applyReactionStats(baseResponses, reactionRows),
     studentCount: 0
   };
 }
 
-export async function getStudentVisibleResponses(joinCode: string) {
+export async function getStudentVisibleResponses(joinCode: string, viewerStudentId: string) {
   ensureSupabaseConfigured();
   const code = sanitizeInput(joinCode).toUpperCase();
 
@@ -322,7 +383,19 @@ export async function getStudentVisibleResponses(joinCode: string) {
     .order('created_at', { ascending: false });
 
   if (responseError) throw new Error(responseError.message);
-  return { responses: (responseRows || []).map((row) => toResponse(row as unknown as ResponseRow)) };
+  const baseResponses = (responseRows || []).map((row) => toResponse(row as unknown as ResponseRow));
+  const responseIds = baseResponses.map((row) => row.id);
+  let reactionRows: ReactionRow[] = [];
+  if (responseIds.length > 0) {
+    const { data: reactionData, error: reactionError } = await supabase
+      .from('response_reactions')
+      .select('id,response_id,student_id,reaction_type')
+      .in('response_id', responseIds);
+    if (reactionError) throw new Error(reactionError.message);
+    reactionRows = (reactionData || []) as ReactionRow[];
+  }
+
+  return { responses: applyReactionStats(baseResponses, reactionRows, viewerStudentId) };
 }
 
 export async function updateSessionSettings(
@@ -441,6 +514,71 @@ export async function deleteResponse(joinCode: string, responseId: number) {
 
   if (error) throw new Error(error.message);
   return { ok: true };
+}
+
+export async function setResponseReaction(
+  joinCode: string,
+  responseId: number,
+  studentId: string,
+  reactionType: ReactionType
+) {
+  ensureSupabaseConfigured();
+  const code = sanitizeInput(joinCode).toUpperCase();
+  const safeStudentId = sanitizeInput(studentId).slice(0, 80);
+  if (!safeStudentId) throw new Error('Missing student identifier.');
+
+  const { data: sessionRow, error: sessionError } = await supabase
+    .from('sessions')
+    .select('id,active,student_can_view_responses')
+    .eq('join_code', code)
+    .eq('active', true)
+    .single<{ id: number; active: boolean; student_can_view_responses: boolean }>();
+
+  if (sessionError || !sessionRow) throw new Error('Session not found or ended.');
+  if (!sessionRow.student_can_view_responses) {
+    throw new Error('Reactions are not enabled for this session.');
+  }
+
+  const { data: responseRow, error: responseError } = await supabase
+    .from('responses')
+    .select('id')
+    .eq('id', responseId)
+    .eq('session_id', sessionRow.id)
+    .single<{ id: number }>();
+  if (responseError || !responseRow) throw new Error('Response not found.');
+
+  const { data: existing, error: existingError } = await supabase
+    .from('response_reactions')
+    .select('id,reaction_type')
+    .eq('response_id', responseId)
+    .eq('student_id', safeStudentId)
+    .maybeSingle<{ id: number; reaction_type: ReactionType }>();
+  if (existingError) throw new Error(existingError.message);
+
+  if (existing?.reaction_type === reactionType) {
+    const { error: deleteError } = await supabase.from('response_reactions').delete().eq('id', existing.id);
+    if (deleteError) throw new Error(deleteError.message);
+    return { myReaction: null as ReactionType | null };
+  }
+
+  const payload = {
+    response_id: responseId,
+    student_id: safeStudentId,
+    reaction_type: reactionType
+  };
+
+  if (existing) {
+    const { error: updateError } = await supabase
+      .from('response_reactions')
+      .update({ reaction_type: reactionType })
+      .eq('id', existing.id);
+    if (updateError) throw new Error(updateError.message);
+  } else {
+    const { error: insertError } = await supabase.from('response_reactions').insert(payload);
+    if (insertError) throw new Error(insertError.message);
+  }
+
+  return { myReaction: reactionType };
 }
 
 export async function endSession(joinCode: string) {

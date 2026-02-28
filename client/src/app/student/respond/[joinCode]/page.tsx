@@ -1,16 +1,48 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
-import ResponseCardView from '@/components/ResponseCard';
-import { getSession, getStudentVisibleResponses, submitResponse } from '@/lib/api';
+import { findVocabularyEntry } from '@/lib/vocabulary';
+import {
+  getSession,
+  getStudentVisibleResponses,
+  setResponseReaction,
+  submitResponse
+} from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 import { getStudentId, getStudentName, getSubmissionStatus, setSubmissionStatus } from '@/lib/storage';
-import type { Category, ResponseCard } from '@/lib/types';
+import type { Category, ReactionType, ResponseCard } from '@/lib/types';
+
+const REACTION_OPTIONS: Array<{ type: ReactionType; label: string }> = [
+  { type: 'helpful', label: 'Helpful' },
+  { type: 'interesting', label: 'Interesting' },
+  { type: 'need_example', label: 'Need Example' }
+];
+
+function renderWithVocabulary(content: string, onSelect: (term: string) => void) {
+  return content.split(/(\s+)/g).map((token, index) => {
+    const clean = token.toLowerCase().replace(/[^a-z]/g, '');
+    const entry = clean ? findVocabularyEntry(clean) : null;
+    if (!entry) return <span key={`${token}-${index}`}>{token}</span>;
+
+    return (
+      <button
+        key={`${token}-${index}`}
+        type="button"
+        className="vocab-link"
+        onClick={() => onSelect(entry.term)}
+        title="See definition"
+      >
+        {token}
+      </button>
+    );
+  });
+}
 
 export default function StudentRespondPage() {
   const params = useParams<{ joinCode: string }>();
   const joinCode = params.joinCode.toUpperCase();
+  const [studentId, setStudentId] = useState('');
 
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [prompt, setPrompt] = useState('');
@@ -23,8 +55,10 @@ export default function StudentRespondPage() {
   const [error, setError] = useState('');
   const [ended, setEnded] = useState(false);
   const [responses, setResponses] = useState<ResponseCard[]>([]);
+  const [vocabTerm, setVocabTerm] = useState<string | null>(null);
 
   useEffect(() => {
+    setStudentId(getStudentId(joinCode));
     setSubmitted(getSubmissionStatus(joinCode));
 
     let mounted = true;
@@ -38,8 +72,8 @@ export default function StudentRespondPage() {
         setStudentCanViewResponses(data.session.studentCanViewResponses);
         setEnded(!data.session.active);
 
-        if (data.session.studentCanViewResponses) {
-          const visible = await getStudentVisibleResponses(joinCode);
+        if (data.session.studentCanViewResponses && getSubmissionStatus(joinCode) && studentId) {
+          const visible = await getStudentVisibleResponses(joinCode, studentId);
           if (mounted) setResponses(visible.responses);
         }
       })
@@ -61,7 +95,7 @@ export default function StudentRespondPage() {
           table: 'sessions',
           filter: `join_code=eq.${joinCode}`
         },
-        (payload) => {
+        async (payload) => {
           const row = payload.new as {
             active: boolean;
             anonymous_mode: boolean;
@@ -73,12 +107,17 @@ export default function StudentRespondPage() {
           }
           setAnonymousMode(row.anonymous_mode);
           setStudentCanViewResponses(row.student_can_view_responses);
+
+          if (row.student_can_view_responses && getSubmissionStatus(joinCode) && studentId) {
+            const visible = await getStudentVisibleResponses(joinCode, studentId);
+            setResponses(visible.responses);
+          }
         }
       )
       .subscribe();
 
     const presenceChannel = supabase.channel(`presence:${joinCode}`, {
-      config: { presence: { key: getStudentId(joinCode) } }
+      config: { presence: { key: studentId } }
     });
 
     presenceChannel.subscribe(async (status) => {
@@ -92,10 +131,12 @@ export default function StudentRespondPage() {
       supabase.removeChannel(sessionChannel);
       supabase.removeChannel(presenceChannel);
     };
-  }, [joinCode]);
+  }, [joinCode, studentId]);
+
+  const canSeeResponses = studentCanViewResponses && submitted;
 
   useEffect(() => {
-    if (!sessionId || !studentCanViewResponses) return;
+    if (!sessionId || !canSeeResponses || !studentId) return;
 
     const responsesChannel = supabase
       .channel(`student-responses:${sessionId}`)
@@ -107,29 +148,9 @@ export default function StudentRespondPage() {
           table: 'responses',
           filter: `session_id=eq.${sessionId}`
         },
-        (payload) => {
-          const row = payload.new as {
-            id: number;
-            session_id: number;
-            content: string;
-            created_at: string;
-            category: Category;
-            student_name: string | null;
-          };
-          setResponses((current) => {
-            if (current.some((item) => item.id === row.id)) return current;
-            return [
-              {
-                id: row.id,
-                sessionId: row.session_id,
-                content: row.content,
-                createdAt: row.created_at,
-                category: row.category,
-                studentName: row.student_name
-              },
-              ...current
-            ];
-          });
+        async () => {
+          const visible = await getStudentVisibleResponses(joinCode, studentId);
+          setResponses(visible.responses);
         }
       )
       .on(
@@ -140,13 +161,9 @@ export default function StudentRespondPage() {
           table: 'responses',
           filter: `session_id=eq.${sessionId}`
         },
-        (payload) => {
-          const row = payload.new as { id: number; category: Category; student_name: string | null };
-          setResponses((current) =>
-            current.map((item) =>
-              item.id === row.id ? { ...item, category: row.category, studentName: row.student_name } : item
-            )
-          );
+        async () => {
+          const visible = await getStudentVisibleResponses(joinCode, studentId);
+          setResponses(visible.responses);
         }
       )
       .on(
@@ -157,9 +174,45 @@ export default function StudentRespondPage() {
           table: 'responses',
           filter: `session_id=eq.${sessionId}`
         },
-        (payload) => {
-          const row = payload.old as { id: number };
-          setResponses((current) => current.filter((item) => item.id !== row.id));
+        async () => {
+          const visible = await getStudentVisibleResponses(joinCode, studentId);
+          setResponses(visible.responses);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'response_reactions'
+        },
+        async () => {
+          const visible = await getStudentVisibleResponses(joinCode, studentId);
+          setResponses(visible.responses);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'response_reactions'
+        },
+        async () => {
+          const visible = await getStudentVisibleResponses(joinCode, studentId);
+          setResponses(visible.responses);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'response_reactions'
+        },
+        async () => {
+          const visible = await getStudentVisibleResponses(joinCode, studentId);
+          setResponses(visible.responses);
         }
       )
       .subscribe();
@@ -167,7 +220,7 @@ export default function StudentRespondPage() {
     return () => {
       supabase.removeChannel(responsesChannel);
     };
-  }, [sessionId, studentCanViewResponses]);
+  }, [sessionId, canSeeResponses, joinCode, studentId]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -186,15 +239,31 @@ export default function StudentRespondPage() {
     setSending(true);
     setError('');
     try {
-      await submitResponse(joinCode, getStudentId(joinCode), text, getStudentName(joinCode));
+      await submitResponse(joinCode, studentId, text, getStudentName(joinCode));
       setSubmitted(true);
       setSubmissionStatus(joinCode, true);
+      if (studentCanViewResponses) {
+        const visible = await getStudentVisibleResponses(joinCode, studentId);
+        setResponses(visible.responses);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not submit response.');
     } finally {
       setSending(false);
     }
   }
+
+  async function handleReaction(responseId: number, type: ReactionType) {
+    try {
+      await setResponseReaction(joinCode, responseId, studentId, type);
+      const visible = await getStudentVisibleResponses(joinCode, studentId);
+      setResponses(visible.responses);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save reaction.');
+    }
+  }
+
+  const selectedVocab = useMemo(() => (vocabTerm ? findVocabularyEntry(vocabTerm) : null), [vocabTerm]);
 
   if (loading) {
     return (
@@ -232,20 +301,57 @@ export default function StudentRespondPage() {
         {submitted ? <p className="success">Your response was submitted.</p> : null}
         {error ? <p className="error">{error}</p> : null}
 
-        {studentCanViewResponses ? (
+        {studentCanViewResponses && !submitted ? (
+          <p className="muted">Submit your response to unlock class responses.</p>
+        ) : null}
+
+        {canSeeResponses ? (
           <section className="stack">
             <h2>Class Responses</h2>
             <div className="student-responses-grid">
               {responses.map((card) => (
-                <ResponseCardView
-                  key={card.id}
-                  card={card}
-                  anonymousMode={anonymousMode}
-                  highlighted={false}
-                  onToggleHighlight={() => {}}
-                />
+                <article key={card.id} className="response-card">
+                  <header>
+                    <span>
+                      {anonymousMode ? 'Anonymous response' : card.studentName?.trim() || `Response #${card.id}`}
+                    </span>
+                  </header>
+                  <p>{renderWithVocabulary(card.content, setVocabTerm)}</p>
+                  <div className="reaction-row">
+                    {REACTION_OPTIONS.map((item) => {
+                      const count =
+                        item.type === 'helpful'
+                          ? card.reactionCounts.helpful
+                          : item.type === 'interesting'
+                            ? card.reactionCounts.interesting
+                            : card.reactionCounts.needExample;
+                      const active = card.myReaction === item.type;
+                      return (
+                        <button
+                          key={item.type}
+                          type="button"
+                          className={`reaction-btn ${active ? 'active' : ''}`}
+                          onClick={() => handleReaction(card.id, item.type)}
+                        >
+                          {item.label} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </article>
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {selectedVocab ? (
+          <section className="vocab-card">
+            <h3>{selectedVocab.term}</h3>
+            <p>{selectedVocab.definition}</p>
+            <p className="muted">Example: {selectedVocab.example}</p>
+            <button className="button" type="button" onClick={() => setVocabTerm(null)}>
+              Close
+            </button>
           </section>
         ) : null}
       </section>
