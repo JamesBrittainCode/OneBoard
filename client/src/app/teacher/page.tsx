@@ -1,15 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { createSession, getMe, loginTeacher, logoutTeacher, registerTeacher } from '@/lib/api';
+import { getMe, loginTeacher, logoutTeacher, registerTeacher } from '@/lib/api';
 import { CREATED_BY } from '@/lib/branding';
-import { getTeacherSessions, recordTeacherSession } from '@/lib/storage';
+import { getTeacherSessions } from '@/lib/storage';
 
 export default function TeacherPage() {
-  const [creating, setCreating] = useState(false);
-  const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -19,7 +16,6 @@ export default function TeacherPage() {
   const [authLoading, setAuthLoading] = useState(true);
   const [userEmail, setUserEmail] = useState('');
 
-  const router = useRouter();
   const previous = useMemo(() => getTeacherSessions(), []);
 
   useEffect(() => {
@@ -57,32 +53,11 @@ export default function TeacherPage() {
     }
   }
 
-  async function launchSession(event: FormEvent) {
-    event.preventDefault();
-    setError('');
-    if (!prompt.trim()) {
-      setError('Please add a prompt first.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { session } = await createSession(prompt.trim());
-      recordTeacherSession(session.joinCode, session.prompt);
-      router.push(`/teacher/live/${session.joinCode}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create session.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function signOut() {
     setError('');
     try {
       await logoutTeacher();
       setUserEmail('');
-      setCreating(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not sign out.');
     }
@@ -155,29 +130,10 @@ export default function TeacherPage() {
                 <button className="button" type="button" onClick={signOut}>
                   Sign Out
                 </button>
-              </div>
-
-              {!creating ? (
-                <button className="button primary" type="button" onClick={() => setCreating(true)}>
+                <Link href="/teacher/setup" className="button primary">
                   Start New Session
-                </button>
-              ) : (
-                <form className="stack" onSubmit={launchSession}>
-                  <label htmlFor="prompt">Enter your prompt</label>
-                  <textarea
-                    id="prompt"
-                    className="textarea"
-                    value={prompt}
-                    placeholder="What evidence supports your claim?"
-                    onChange={(event) => setPrompt(event.target.value)}
-                    maxLength={400}
-                    required
-                  />
-                  <button className="button primary" type="submit" disabled={loading}>
-                    {loading ? 'Launching...' : 'Launch Session'}
-                  </button>
-                </form>
-              )}
+                </Link>
+              </div>
 
               <div className="stack">
                 <h2>Recent Sessions</h2>

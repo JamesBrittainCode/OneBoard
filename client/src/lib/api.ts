@@ -132,10 +132,22 @@ export async function getMe() {
   } as { user: TeacherUser };
 }
 
-export async function createSession(prompt: string) {
+export async function createSession(
+  prompt: string,
+  options?: {
+    boardMode?: BoardMode;
+    anonymousMode?: boolean;
+    sectionLabels?: [string, string, string];
+  }
+) {
   const user = await getAuthUserOrThrow();
   const safePrompt = sanitizeInput(prompt).slice(0, 400);
   if (!safePrompt) throw new Error('Prompt is required.');
+  const sectionLabels = options?.sectionLabels || [
+    'Strong Thinking',
+    'Needs Clarification',
+    'Misconception'
+  ];
 
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const joinCode = createJoinCode(6);
@@ -146,11 +158,11 @@ export async function createSession(prompt: string) {
         join_code: joinCode,
         active: true,
         teacher_user_id: user.id,
-        board_mode: 'categorized',
-        anonymous_mode: true,
-        section_label_1: 'Strong Thinking',
-        section_label_2: 'Needs Clarification',
-        section_label_3: 'Misconception'
+        board_mode: options?.boardMode || 'categorized',
+        anonymous_mode: options?.anonymousMode ?? true,
+        section_label_1: sanitizeInput(sectionLabels[0]).slice(0, 40) || 'Strong Thinking',
+        section_label_2: sanitizeInput(sectionLabels[1]).slice(0, 40) || 'Needs Clarification',
+        section_label_3: sanitizeInput(sectionLabels[2]).slice(0, 40) || 'Misconception'
       })
       .select(
         'id,prompt,join_code,created_at,active,board_mode,anonymous_mode,section_label_1,section_label_2,section_label_3'
