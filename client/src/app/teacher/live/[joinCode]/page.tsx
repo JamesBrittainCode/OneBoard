@@ -38,6 +38,7 @@ export default function TeacherLivePage() {
   const [loading, setLoading] = useState(true);
   const [highlighted, setHighlighted] = useState<Set<number>>(new Set());
   const [savingSettings, setSavingSettings] = useState(false);
+  const [notice, setNotice] = useState('');
   const draggingId = useRef<number | null>(null);
 
   useEffect(() => {
@@ -206,8 +207,11 @@ export default function TeacherLivePage() {
     setError('');
     try {
       await updateSessionSettings(joinCode, next);
+      setNotice('Settings saved');
+      window.setTimeout(() => setNotice(''), 1400);
     } catch {
       setError('Could not save session settings.');
+      throw new Error('save-settings-failed');
     } finally {
       setSavingSettings(false);
     }
@@ -261,6 +265,27 @@ export default function TeacherLivePage() {
     }
   }
 
+  async function copyJoinCode() {
+    try {
+      await navigator.clipboard.writeText(joinCode);
+      setNotice('Join code copied');
+      window.setTimeout(() => setNotice(''), 1400);
+    } catch {
+      setError('Could not copy join code.');
+    }
+  }
+
+  async function copyJoinLink() {
+    try {
+      const url = `${window.location.origin}/student`;
+      await navigator.clipboard.writeText(url);
+      setNotice('Student join link copied');
+      window.setTimeout(() => setNotice(''), 1400);
+    } catch {
+      setError('Could not copy join link.');
+    }
+  }
+
   if (loading) {
     return (
       <main className="shell centered">
@@ -299,9 +324,12 @@ export default function TeacherLivePage() {
             <button
               className="button"
               onClick={() => {
-                const next = anonymousMode ? false : true;
+                const prev = anonymousMode;
+                const next = !prev;
                 setAnonymousMode(next);
-                saveSettings({ anonymousMode: next });
+                saveSettings({ anonymousMode: next }).catch(() => {
+                  setAnonymousMode(prev);
+                });
               }}
               disabled={savingSettings}
             >
@@ -310,13 +338,22 @@ export default function TeacherLivePage() {
             <button
               className="button"
               onClick={() => {
-                const next = boardMode === 'categorized' ? 'open' : 'categorized';
+                const prev = boardMode;
+                const next = prev === 'categorized' ? 'open' : 'categorized';
                 setBoardMode(next);
-                saveSettings({ boardMode: next });
+                saveSettings({ boardMode: next }).catch(() => {
+                  setBoardMode(prev);
+                });
               }}
               disabled={savingSettings}
             >
               Mode: {boardMode === 'categorized' ? 'Categorized' : 'Open Space'}
+            </button>
+            <button className="button" onClick={copyJoinCode}>
+              Copy Join Code
+            </button>
+            <button className="button" onClick={copyJoinLink}>
+              Copy Student Link
             </button>
             <button className="button" onClick={handleExport}>
               Export Board (CSV)
@@ -344,7 +381,10 @@ export default function TeacherLivePage() {
                     setSectionLabels(next);
                   }}
                   onBlur={() => {
-                    saveSettings({ sectionLabels });
+                    const prev = sectionLabels;
+                    saveSettings({ sectionLabels: prev }).catch(() => {
+                      setSectionLabels(prev);
+                    });
                   }}
                   placeholder={`Section ${index + 1}`}
                   disabled={savingSettings}
@@ -354,6 +394,7 @@ export default function TeacherLivePage() {
           ) : null}
 
           {error ? <p className="error">{error}</p> : null}
+          {notice ? <p className="success">{notice}</p> : null}
         </div>
 
         <div className="columns" style={{ padding: '0 14px 14px', gridTemplateColumns: boardMode === 'open' ? '1fr' : undefined }}>
