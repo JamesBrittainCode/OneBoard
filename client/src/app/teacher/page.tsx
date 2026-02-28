@@ -13,6 +13,7 @@ export default function TeacherPage() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [userEmail, setUserEmail] = useState('');
 
@@ -110,15 +111,25 @@ export default function TeacherPage() {
                 onChange={(event) => setEmail(event.target.value)}
                 required
               />
-              <input
-                className="input"
-                type="password"
-                placeholder="Password (min 8 chars)"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                minLength={8}
-                required
-              />
+              <div className="password-wrap">
+                <input
+                  className="input"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Password (min 8 chars)"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  minLength={8}
+                  required
+                />
+                <button
+                  type="button"
+                  className="eye-button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
               <button className="button primary" type="submit" disabled={loading}>
                 {loading ? 'Please wait...' : authMode === 'login' ? 'Login' : 'Create Account'}
               </button>

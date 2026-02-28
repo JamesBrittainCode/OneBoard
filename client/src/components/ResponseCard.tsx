@@ -14,6 +14,8 @@ export default function ResponseCard({
   anonymousMode,
   highlighted,
   onToggleHighlight,
+  onDelete,
+  deleteEnabled = false,
   draggable = false,
   onDragStart
 }: {
@@ -21,6 +23,8 @@ export default function ResponseCard({
   anonymousMode: boolean;
   highlighted: boolean;
   onToggleHighlight: () => void;
+  onDelete?: () => void;
+  deleteEnabled?: boolean;
   draggable?: boolean;
   onDragStart?: (responseId: number) => void;
 }) {
@@ -42,6 +46,19 @@ export default function ResponseCard({
         }
       }}
     >
+      {deleteEnabled ? (
+        <button
+          type="button"
+          className="card-delete"
+          aria-label="Delete response"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete?.();
+          }}
+        >
+          Delete
+        </button>
+      ) : null}
       <header>
         <span>
           {anonymousMode ? 'Anonymous response' : card.studentName?.trim() || `Response #${card.id}`}

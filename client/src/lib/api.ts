@@ -31,9 +31,24 @@ type ResponseRow = {
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const SUBMIT_DEBOUNCE_MS = 1200;
 const submitTimes = new Map<string, number>();
+const PROFANITY_PATTERNS: RegExp[] = [
+  /\bfuck(?:er|ing|ed|s)?\b/gi,
+  /\bshit(?:ty|ting|s)?\b/gi,
+  /\bbitch(?:es)?\b/gi,
+  /\basshole(?:s)?\b/gi,
+  /\bbastard(?:s)?\b/gi
+];
 
 function sanitizeInput(raw = '') {
   return String(raw).trim().replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function censorProfanity(raw = '') {
+  let value = String(raw);
+  for (const pattern of PROFANITY_PATTERNS) {
+    value = value.replace(pattern, (match) => '*'.repeat(match.length));
+  }
+  return value;
 }
 
 function ensureSupabaseConfigured() {
@@ -281,7 +296,7 @@ export async function submitResponse(
   ensureSupabaseConfigured();
   const code = sanitizeInput(joinCode).toUpperCase();
   const safeStudentId = sanitizeInput(studentId).slice(0, 80);
-  const safeContent = sanitizeInput(content).slice(0, 250);
+  const safeContent = censorProfanity(sanitizeInput(content)).slice(0, 250);
   const safeStudentName = sanitizeInput(studentName || '').slice(0, 80) || null;
 
   if (!safeStudentId) throw new Error('Missing student identifier.');
@@ -348,6 +363,32 @@ export async function updateResponseCategory(
   const { error } = await supabase
     .from('responses')
     .update({ category })
+    .eq('id', responseId)
+    .eq('session_id', sessionRow.id);
+
+  if (error) throw new Error(error.message);
+  return { ok: true };
+}
+
+export async function deleteResponse(joinCode: string, responseId: number) {
+  const user = await getAuthUserOrThrow();
+  const code = sanitizeInput(joinCode).toUpperCase();
+
+  const { data: sessionRow, error: sessionError } = await supabase
+    .from('sessions')
+    .select('id')
+    .eq('join_code', code)
+    .eq('teacher_user_id', user.id)
+    .eq('active', true)
+    .single();
+
+  if (sessionError || !sessionRow) {
+    throw new Error('Session not found or unauthorized.');
+  }
+
+  const { error } = await supabase
+    .from('responses')
+    .delete()
     .eq('id', responseId)
     .eq('session_id', sessionRow.id);
 

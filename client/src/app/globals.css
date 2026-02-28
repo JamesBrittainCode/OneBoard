@@ -111,6 +111,27 @@ p {
   outline: none;
 }
 
+.password-wrap {
+  position: relative;
+}
+
+.password-wrap .input {
+  padding-right: 76px;
+}
+
+.eye-button {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
 .textarea {
   min-height: 150px;
   resize: vertical;
@@ -216,12 +237,25 @@ p {
 }
 
 .response-card {
+  position: relative;
   border-radius: 12px;
   border: 1px solid rgba(0, 0, 0, 0.06);
   padding: 11px;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
   animation: slideIn 220ms ease both;
+}
+
+.card-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  cursor: pointer;
 }
 
 .response-card header {

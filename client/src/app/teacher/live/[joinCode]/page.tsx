@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import CategoryColumn from '@/components/CategoryColumn';
 import {
+  deleteResponse,
   endSession,
   exportBoardCsv,
   getTeacherSession,
@@ -104,6 +105,19 @@ export default function TeacherLivePage() {
               ...current
             ];
           });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'responses',
+          filter: `session_id=eq.${sessionId}`
+        },
+        (payload) => {
+          const row = payload.old as { id: number };
+          setResponses((current) => current.filter((item) => item.id !== row.id));
         }
       )
       .on(
@@ -245,6 +259,20 @@ export default function TeacherLivePage() {
       setEnded(true);
     } catch {
       setError('Could not end session.');
+    }
+  }
+
+  async function handleDeleteResponse(responseId: number) {
+    if (ended) return;
+    const previous = responses;
+    setResponses((current) => current.filter((item) => item.id !== responseId));
+    try {
+      await deleteResponse(joinCode, responseId);
+      setNotice('Response deleted');
+      window.setTimeout(() => setNotice(''), 1400);
+    } catch {
+      setResponses(previous);
+      setError('Could not delete response.');
     }
   }
 
@@ -407,6 +435,7 @@ export default function TeacherLivePage() {
               anonymousMode={anonymousMode}
               highlighted={highlighted}
               onToggleHighlight={toggleHighlight}
+              onDelete={handleDeleteResponse}
               onDragStart={(id) => {
                 draggingId.current = id;
               }}

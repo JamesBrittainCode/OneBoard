@@ -10,6 +10,7 @@ export default function CategoryColumn({
   anonymousMode,
   highlighted,
   onToggleHighlight,
+  onDelete,
   onDropCard,
   onDragStart,
   dragEnabled = true
@@ -20,6 +21,7 @@ export default function CategoryColumn({
   anonymousMode: boolean;
   highlighted: Set<number>;
   onToggleHighlight: (id: number) => void;
+  onDelete: (id: number) => void;
   onDropCard: (category: Category) => void;
   onDragStart: (id: number) => void;
   dragEnabled?: boolean;
@@ -46,6 +48,8 @@ export default function CategoryColumn({
             anonymousMode={anonymousMode}
             highlighted={highlighted.has(card.id)}
             onToggleHighlight={() => onToggleHighlight(card.id)}
+            onDelete={() => onDelete(card.id)}
+            deleteEnabled
             draggable={dragEnabled}
             onDragStart={onDragStart}
           />

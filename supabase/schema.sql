@@ -123,3 +123,18 @@ create policy "responses_update_owner"
         and s.teacher_user_id = auth.uid()
     )
   );
+
+-- Responses: only owner teacher can delete responses.
+drop policy if exists "responses_delete_owner" on public.responses;
+create policy "responses_delete_owner"
+  on public.responses
+  for delete
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.sessions s
+      where s.id = responses.session_id
+        and s.teacher_user_id = auth.uid()
+    )
+  );
